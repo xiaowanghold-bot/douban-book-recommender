@@ -1,4 +1,4 @@
-﻿"""
+"""
 豆瓣读书图书评价与推荐系统 - Streamlit Web 应用
 江南大学大学生创新训练计划项目
 """
@@ -267,6 +267,87 @@ elif page == "📊 数据洞察":
         st.image(str(fig_dir / "09_bayesian_top15.png"), use_container_width=True)
 
 # ========== 关于 ==========
+
+# ========== 出版社与作者 ==========
+elif page == "🏢 出版社与作者":
+    st.title("🏢 出版社与作者分析")
+    st.markdown("*基于爬虫获取的 6,575 本高分图书详细信息*")
+
+    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
+    data_dir = Path(__file__).parent.parent / "data" / "processed"
+
+    # 加载分析数据
+    @st.cache_data
+    def load_pub_stats():
+        path = data_dir / "publisher_stats.csv"
+        if path.exists():
+            return pd.read_csv(path, encoding="utf-8-sig", index_col=0)
+        return None
+
+    @st.cache_data
+    def load_author_stats():
+        path = data_dir / "author_stats.csv"
+        if path.exists():
+            return pd.read_csv(path, encoding="utf-8-sig", index_col=0)
+        return None
+
+    pub_stats = load_pub_stats()
+    author_stats = load_author_stats()
+
+    if pub_stats is not None:
+        st.markdown("### 📚 出版社综合评价矩阵")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("出版社总数", len(pub_stats))
+        with col2:
+            st.metric("平均每社图书", f"{pub_stats['book_count'].mean():.1f} 本")
+
+        # Top 出版社表格
+        top_pub = pub_stats.head(15)[["book_count", "avg_rating", "avg_bayesian", "pub_score"]]
+        top_pub.columns = ["图书数量", "平均评分", "贝叶斯均分", "综合评分"]
+        top_pub.index = [f"{i+1}. {n}" for i, n in enumerate(top_pub.index)]
+        st.dataframe(
+            top_pub.style
+            .format({"平均评分": "{:.2f}", "贝叶斯均分": "{:.4f}", "综合评分": "{:.4f}", "图书数量": "{:.0f}"})
+            .background_gradient(subset=["综合评分"], cmap="YlOrRd"),
+            use_container_width=True,
+        )
+
+        st.markdown("### 📈 出版社二维评价矩阵")
+        if (fig_dir / "10_publisher_matrix.png").exists():
+            st.image(str(fig_dir / "10_publisher_matrix.png"), use_container_width=True)
+
+    if author_stats is not None:
+        st.markdown("---")
+        st.markdown("### ✍️ 作者影响力分析")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("作者总数", len(author_stats))
+        with col2:
+            st.metric("中国作者", int((author_stats["nationality"] == "中国").sum()))
+        with col3:
+            st.metric("外国作者", int((author_stats["nationality"] != "中国").sum()))
+
+        # Top 作者表格
+        top_author = author_stats.head(15)[["book_count", "nationality", "avg_rating", "author_score", "influence"]]
+        top_author.columns = ["图书数量", "国籍", "平均评分", "作者评分", "影响力"]
+        top_author.index = [f"{i+1}. {n}" for i, n in enumerate(top_author.index)]
+        st.dataframe(
+            top_author.style
+            .format({"平均评分": "{:.2f}", "作者评分": "{:.4f}", "影响力": "{:.1f}", "图书数量": "{:.0f}"})
+            .background_gradient(subset=["影响力"], cmap="YlOrRd"),
+            use_container_width=True,
+        )
+
+        st.markdown("### 📊 作者影响力与国籍分布")
+        if (fig_dir / "11_author_influence.png").exists():
+            st.image(str(fig_dir / "11_author_influence.png"), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 📅 出版年份趋势")
+    if (fig_dir / "12_year_trend.png").exists():
+        st.image(str(fig_dir / "12_year_trend.png"), use_container_width=True)
+
 elif page == "ℹ️ 关于项目":
     st.title("ℹ️ 关于项目")
 
