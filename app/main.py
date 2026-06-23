@@ -348,6 +348,133 @@ elif page == "🏢 出版社与作者":
     if (fig_dir / "12_year_trend.png").exists():
         st.image(str(fig_dir / "12_year_trend.png"), use_container_width=True)
 
+
+# ========== 评分预测 ==========
+elif page == "🔮 评分预测":
+    st.title("🔮 图书评分预测")
+    st.markdown("*基于作者、出版社、年份、价格等特征，用随机森林模型预测图书评分*")
+
+    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
+    model_dir = Path(__file__).parent.parent / "data" / "models"
+
+    col1, col2 = st.columns([2, 3])
+
+    with col1:
+        st.markdown("### 📝 输入图书信息")
+
+        author = st.text_input("作者", value="余华", placeholder="例如：余华")
+        publisher = st.text_input("出版社", value="人民文学出版社", placeholder="例如：人民文学出版社")
+        price = st.number_input("价格 (元)", min_value=0.0, max_value=2000.0, value=39.5, step=0.5)
+        year = st.number_input("出版年份", min_value=1950, max_value=2026, value=2014)
+        pages = st.number_input("页数", min_value=10, max_value=5000, value=300)
+        votes = st.number_input("评价人数", min_value=0, max_value=10000000, value=50000)
+        binding = st.selectbox("装帧", ["平装", "精装", "其他"])
+
+        if st.button("🎯 预测评分", type="primary"):
+            try:
+                import pickle, numpy as np, pandas as pd, re
+                sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+                from enhancements import RatingPredictor
+
+                with open(model_dir / "rating_predictor.pkl", "rb") as f:
+                    saved = pickle.load(f)
+
+                rp = RatingPredictor()
+                rp.model = saved["model"]
+                rp.encoders = saved["encoders"]
+                rp.feature_names = saved["feature_names"]
+
+                # Load and prepare reference data for encoder
+                df = pd.read_csv(
+                    Path(__file__).parent.parent / "data" / "raw" / "Books_detail.csv",
+                    encoding="utf-8-sig")
+                df = df[df["crawl_status"] == "success"].copy()
+                df["author_clean"] = df["author"].apply(
+                    lambda x: re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(x)).strip()[:30]
+                    if pd.notna(x) else "unknown")
+                df["publisher_clean"] = df["publisher"].fillna("unknown").astype(str).str[:20]
+                df["binding_type"] = df["binding"].fillna("unknown").apply(
+                    lambda x: "平装" if "平装" in str(x) else ("精装" if "精装" in str(x) else "其他"))
+                rp.df = df
+
+                pred = rp.predict(price, year, pages, votes, author, publisher, binding)
+                if pred:
+                    st.success(f"预测评分: **{pred:.2f}** / 10")
+                    if pred >= 9.0:
+                        st.info("高分图书!")
+                    elif pred >= 8.0:
+                        st.info("优良图书")
+                    elif pred >= 7.0:
+                        st.info("中等评分")
+                    else:
+                        st.info("评分偏低")
+                else:
+                    st.error("预测失败")
+            except Exception as e:
+                st.error(f"预测出错: {e}")
+
+    with col2:
+        st.markdown("### 📊 模型性能")
+        try:
+            import pickle
+            with open(model_dir / "rating_predictor.pkl", "rb") as f:
+                saved = pickle.load(f)
+            metrics = saved.get("metrics", {})
+            col_m1, col_m2, col_m3 = st.columns(3)
+            with col_m1:
+                st.metric("MAE (平均误差)", f"{metrics.get('MAE', 0):.3f}")
+            with col_m2:
+                st.metric("R2 (拟合度)", f"{metrics.get('R2', 0):.3f}")
+            with col_m3:
+                st.metric("CV5 (交叉验证)", f"{metrics.get('CV_R2', 0):.3f}")
+        except:
+            pass
+
+        st.markdown("### 📈 特征重要性")
+        if (fig_dir / "15_feature_importance.png").exists():
+            st.image(str(fig_dir / "15_feature_importance.png"), use_container_width=True)
+
+        st.markdown("### 📉 预测 vs 真实")
+        if (fig_dir / "16_prediction_scatter.png").exists():
+            st.image(str(fig_dir / "16_prediction_scatter.png"), use_container_width=True)
+
+# ========== 更多发现 ==========
+elif page == "💡 更多发现":
+    st.title("💡 更多发现")
+    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
+    data_dir = Path(__file__).parent.parent / "data" / "processed"
+
+    # 词云
+    st.markdown("### ☁️ 高分图书书名词云")
+    if (fig_dir / "13_wordcloud.png").exists():
+        st.image(str(fig_dir / "13_wordcloud.png"), use_container_width=True)
+
+    st.markdown("---")
+
+    # 价格分析
+    st.markdown("### 💰 价格分析")
+    if (fig_dir / "14_price_analysis.png").exists():
+        st.image(str(fig_dir / "14_price_analysis.png"), use_container_width=True)
+
+    # 高性价比图书
+    st.markdown("### 🏷️ 高性价比图书 (评分>=9, <=50元)")
+    try:
+        import pandas as pd
+        df_price = pd.read_csv(data_dir / "books_with_price.csv", encoding="utf-8-sig")
+        value_books = df_price[(df_price["Rating"] >= 9) & (df_price["price_num"] <= 50)]
+        value_books = value_books.nlargest(10, "Votes")[
+            ["Title", "Rating", "price_num", "author", "publisher", "Votes"]
+        ]
+        value_books.columns = ["书名", "评分", "价格(元)", "作者", "出版社", "评价人数"]
+        value_books.index = range(1, len(value_books) + 1)
+        st.dataframe(
+            value_books.style
+            .format({"评分": "{:.1f}", "价格(元)": "{:.1f}", "评价人数": "{:,}"}),
+            use_container_width=True,
+        )
+    except Exception as e:
+        st.warning(f"数据加载中: {e}")
+
 elif page == "ℹ️ 关于项目":
     st.title("ℹ️ 关于项目")
 
