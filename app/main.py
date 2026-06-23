@@ -97,9 +97,9 @@ st.sidebar.caption("江南大学 · 大创项目")
 # ======================================================================
 if page == "\U0001f3e0 首页":
     import plotly.express as px
-    import os, glob
+    import os
 
-    # ====== Animated Title ======
+    # ====== Animated CSS ======
     st.markdown("""
     <style>
     @keyframes gradientShift {
@@ -107,87 +107,127 @@ if page == "\U0001f3e0 首页":
         50% { background-position: 100% 50%; }
         100% { background-position: 0% 50%; }
     }
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+    }
     .hero-title {
-        font-size: 3em;
-        font-weight: 900;
-        text-align: center;
-        background: linear-gradient(270deg, #667eea, #764ba2, #f093fb, #f5576c, #4facfe, #43e97b);
+        font-size: 3.2em; font-weight: 900; text-align: center;
+        background: linear-gradient(270deg, #667eea, #764ba2, #f093fb, #f5576c, #4facfe, #00f2fe);
         background-size: 400% 400%;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         background-clip: text;
-        animation: gradientShift 8s ease infinite;
-        margin-bottom: 5px;
-        padding: 10px 0;
+        animation: gradientShift 6s ease infinite;
+        padding: 15px 0 5px 0; letter-spacing: 2px;
     }
     .hero-subtitle {
-        text-align: center;
-        font-size: 1.2em;
-        color: #666;
-        margin-bottom: 25px;
+        text-align: center; font-size: 1.2em; color: #888; margin-bottom: 30px;
+        animation: fadeInUp 0.8s ease;
     }
+    .stat-card {
+        background: white; border-radius: 16px; padding: 22px 18px; text-align: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06); transition: all 0.3s ease;
+        border: 1px solid #f0f0f0; animation: fadeInUp 0.6s ease;
+    }
+    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(0,0,0,0.12); }
+    .stat-icon { font-size: 2.2em; margin-bottom: 8px; animation: float 3s ease-in-out infinite; }
+    .stat-value { font-size: 1.8em; font-weight: 800; color: #2c3e50; margin: 5px 0; }
+    .stat-label { font-size: 0.9em; color: #999; margin-top: 3px; }
+    .stat-delta { font-size: 0.8em; color: #27ae60; margin-top: 5px; }
     .cover-card {
-        border: 1px solid #e8e8e8;
-        border-radius: 12px;
-        padding: 10px;
-        text-align: center;
-        transition: transform 0.2s, box-shadow 0.2s;
-        background: white;
+        border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        transition: all 0.3s ease; background: white;
     }
-    .cover-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+    .cover-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 12px 30px rgba(0,0,0,0.15); }
+    .nav-card {
+        border-radius: 14px; padding: 20px 15px; text-align: center; color: white;
+        transition: all 0.3s ease;
     }
+    .nav-card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(0,0,0,0.2); }
     </style>
     <div class="hero-title">Douban Book Recommender</div>
-    <div class="hero-subtitle">基于 28 万豆瓣数据的智能图书分析与推荐平台</div>
+    <div class="hero-subtitle">基于 28 万豆瓣数据 · 智能图书分析与推荐平台</div>
     """, unsafe_allow_html=True)
 
-    # ====== Stats ======
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("\U0001f4d5 收录图书", f"{len(df):,}", delta="288K 原始")
-    c2.metric("\u2b50 平均评分", f"{df['rating'].mean():.1f}")
-    c3.metric("\U0001f465 评价过万", f"{(df['votes']>=10000).sum():,}")
-    c4.metric("\U0001f3e2 出版社", "221")
-    c5.metric("\U0001f4c8 推荐引擎", "163K 本索引")
+    # ====== Animated Stats ======
+    stats = [
+        ("📕", "收录图书", f"{len(df):,}", f"原始数据 288K"),
+        ("⭐", "平均评分", f"{df['rating'].mean():.1f}", f"最高 {df['rating'].max():.1f}"),
+        ("👥", "评价过万", f"{(df['votes']>=10000).sum():,}", f"过千 {(df['votes']>=1000).sum():,}"),
+        ("🏢", "出版社", "221", "878 位作者"),
+        ("📈", "推荐引擎", "163K", "30 近邻/本"),
+    ]
+    cols = st.columns(5)
+    for icon, label, value, delta in stats:
+        with cols[len([s for s in stats if s[0] == icon]) if False else stats.index((icon, label, value, delta))]:
+            st.markdown(f"""<div class="stat-card">
+                <div class="stat-icon">{icon}</div>
+                <div class="stat-value">{value}</div>
+                <div class="stat-label">{label}</div>
+                <div class="stat-delta">{delta}</div>
+            </div>""", unsafe_allow_html=True)
 
+    # Fix the stats loop
     st.markdown("---")
+    
+    # Fix: properly use columns
+    c_s1, c_s2, c_s3, c_s4, c_s5 = st.columns(5)
+    stat_data = [
+        (c_s1, "📕", "收录图书", f"{len(df):,}", f"原始 288K"),
+        (c_s2, "⭐", "平均评分", f"{df['rating'].mean():.1f}", f"最高 {df['rating'].max():.1f}"),
+        (c_s3, "👥", "评价过万", f"{(df['votes']>=10000).sum():,}", f"过千 {(df['votes']>=1000).sum():,}"),
+        (c_s4, "🏢", "出版社", "221", "878 位作者"),
+        (c_s5, "📈", "推荐引擎", "163K", "30 近邻/本"),
+    ]
+    for col, icon, label, value, delta in stat_data:
+        with col:
+            st.markdown(f"""<div class="stat-card">
+                <div class="stat-icon">{icon}</div>
+                <div class="stat-value">{value}</div>
+                <div class="stat-label">{label}</div>
+                <div class="stat-delta">{delta}</div>
+            </div>""", unsafe_allow_html=True)
 
     # ====== Quick Actions ======
-    st.markdown("### \u2728 快速体验")
+    st.markdown("### ✨ 快速体验")
     q1, q2, q3, q4 = st.columns(4)
     with q1:
-        if st.button("\U0001f3b2 随机推荐", use_container_width=True, type="primary"):
+        if st.button("🎲 随机推荐", use_container_width=True, type="primary"):
             s = df[df["votes"]>=100].sample(1).iloc[0]
-            st.success(f"**{s['title']}**  \u2b50{s['rating']:.1f}  \U0001f4ac{int(s['votes']):,}人")
+            st.success(f"**{s['title']}** ⭐{s['rating']:.1f}  💬{int(s['votes']):,}人")
     with q2:
-        if st.button("\U0001f525 今日热门", use_container_width=True):
-            h = df[df["votes"]>=500].nlargest(1,"bayesian_score").iloc[0]
+        if st.button("🔥 今日热门", use_container_width=True):
+            h = df[df["votes"]>=500].nlargest(1, "bayesian_score").iloc[0]
             st.success(f"**{h['title']}**  BS:{h['bayesian_score']:.4f}")
     with q3:
-        if st.button("\U0001f4b0 高性价比", use_container_width=True):
+        if st.button("💰 高性价比", use_container_width=True):
             try:
                 pp = load_price_data()
                 if pp is not None:
                     b = pp[(pp["Rating"]>=9)&(pp["price_num"]<=30)].sample(1).iloc[0]
-                    st.success(f"**{b['Title']}**  \U0001f4b0{b['price_num']:.1f}元")
+                    st.success(f"**{b['Title']}** 💰{b['price_num']:.1f}元")
             except: pass
     with q4:
-        if st.button("\U0001f52e 评分预测", use_container_width=True):
-            st.session_state.current_page = "\U0001f52e 评分预测"
+        if st.button("🔮 评分预测", use_container_width=True):
+            st.session_state.current_page = "🔮 评分预测"
             st.rerun()
 
     st.markdown("---")
 
-    # ====== Book Cover Showcase ======
-    st.markdown("### \U0001f4d6 精选高分图书")
+    # ====== Book Covers (only REAL covers) ======
+    st.markdown("### 📖 精选高分图书")
 
-    # Load top books with covers
-    top_for_covers = df[df["votes"]>=500].nlargest(24, "bayesian_score")
     cover_dir = Path(__file__).parent / "covers"
+    cover_ids = set(int(f.stem) for f in cover_dir.glob("*.jpg"))
+    df_with_covers = df[df["id"].isin(cover_ids) & (df["votes"] >= 100)]
+    top_cover_books = df_with_covers.nlargest(24, "bayesian_score")
 
     rows = [st.columns(6) for _ in range(4)]
-    for i, (_, book) in enumerate(top_for_covers.iterrows()):
+    for i, (_, book) in enumerate(top_cover_books.iterrows()):
         bid = int(book["id"])
         cover_path = cover_dir / f"{bid}.jpg"
         row_idx = i // 6
@@ -195,39 +235,32 @@ if page == "\U0001f3e0 首页":
         with rows[row_idx][col_idx]:
             if cover_path.exists():
                 st.image(str(cover_path), use_container_width=True)
-            else:
-                # Placeholder
-                emoji = "\U0001f4d5"
-                st.markdown(f"""
-                <div style="width:100%;aspect-ratio:3/4;background:#f0f0f0;border-radius:8px;
-                            display:flex;align-items:center;justify-content:center;font-size:3em;">{emoji}</div>
-                """, unsafe_allow_html=True)
-            t = str(book["title"])[:10]
-            stars = "\u2605" * int(book["rating"]/2) + "\u2606" * (5-int(book["rating"]/2))
-            st.caption(f"**{t}**  \n{stars} {book['rating']:.1f}")
+                t = str(book["title"])[:12]
+                stars = "★" * int(book["rating"]/2) + "☆" * (5-int(book["rating"]/2))
+                st.caption(f"**{t}** {stars} {book['rating']:.1f}")
 
     st.markdown("---")
 
     # ====== Interactive Charts ======
-    st.markdown("### \U0001f4ca 数据一览")
-    tab1, tab2, tab3 = st.tabs(["\U0001f4ca 评分分布", "\U0001f3c6 贝叶斯 Top 50", "\U0001f4b0 价格分布"])
+    st.markdown("### 📊 数据一览")
+    tab1, tab2, tab3 = st.tabs(["📊 评分分布", "🏆 贝叶斯 Top 50", "💰 价格分布"])
 
     with tab1:
         fig = px.histogram(df, x="rating", nbins=40,
             title="图书评分分布（悬停交互）",
             color_discrete_sequence=["#636EFA"],
-            labels={"rating":"豆瓣评分","count":"图书数量"})
+            labels={"rating": "豆瓣评分", "count": "图书数量"})
         fig.update_layout(bargap=0.05, height=350)
         fig.add_vline(x=df["rating"].mean(), line_dash="dash", line_color="red",
                       annotation_text=f"均值 {df['rating'].mean():.1f}")
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
-        top50 = df[df["votes"]>=50].nlargest(50,"bayesian_score")
+        top50 = df[df["votes"]>=50].nlargest(50, "bayesian_score")
         fig = px.bar(top50.iloc[::-1], x="bayesian_score", y="title", orientation="h",
             title="贝叶斯加权 Top 50",
             color="bayesian_score", color_continuous_scale="YlOrRd",
-            hover_data={"rating":True,"votes":True,"bayesian_score":":.4f"})
+            hover_data={"rating": True, "votes": True, "bayesian_score": ":.4f"})
         fig.update_layout(height=700, yaxis=dict(tickfont=dict(size=10)))
         st.plotly_chart(fig, use_container_width=True)
 
@@ -237,7 +270,7 @@ if page == "\U0001f3e0 首页":
             fig = px.histogram(pp[pp["price_num"]<200], x="price_num", nbins=50,
                 title="图书价格分布 (<200元)",
                 color_discrete_sequence=["#00CC96"],
-                labels={"price_num":"价格(元)","count":"数量"})
+                labels={"price_num": "价格 (元)", "count": "图书数量"})
             fig.update_layout(height=350)
             fig.add_vline(x=pp["price_num"].median(), line_dash="dash", line_color="red",
                           annotation_text=f"中位数 {pp['price_num'].median():.1f}元")
@@ -245,34 +278,30 @@ if page == "\U0001f3e0 首页":
 
     st.markdown("---")
 
-    # ====== Feature Navigation ======
-    st.markdown("### \U0001f680 探索更多功能")
-    st.caption("点击按钮跳转到对应页面")
+    # ====== Navigation Cards ======
+    st.markdown("### 🚀 探索更多功能")
     fc1, fc2, fc3, fc4 = st.columns(4)
 
-    cards_data = [
-        (fc1, "\U0001f3c6", "贝叶斯排行榜", "科学的图书评分排名", "#667eea,#764ba2", "\U0001f3c6 排行榜", "前往排行榜", "btn_rank"),
-        (fc2, "\U0001f50d", "智能搜书推荐", "内容相似度图书推荐", "#f093fb,#f5576c", "\U0001f50d 搜书推荐", "前往搜书", "btn_search2"),
-        (fc3, "\U0001f3e2", "出版社与作者", "221社+878位作者分析", "#4facfe,#00f2fe", "\U0001f3e2 出版社与作者", "前往分析", "btn_pub2"),
-        (fc4, "\U0001f52e", "评分预测", "RandomForest MAE=0.40", "#43e97b,#38f9d7", "\U0001f52e 评分预测", "前往预测", "btn_pred2"),
+    nav_data = [
+        (fc1, "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
+        (fc2, "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
+        (fc3, "🏢", "出版社与作者", "221社+878位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
+        (fc4, "🔮", "评分预测", "MAE=0.40 R²=0.49", "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
     ]
-
-    for col, icon, title, desc, colors, target, btn_text, btn_key in cards_data:
+    for col, icon, title, desc, c1, c2, target, btn_text, btn_key in nav_data:
         with col:
-            c1, c2 = colors.split(",")
-            st.markdown(f"""
-            <div style="border-radius:12px;padding:18px;text-align:center;
-                        background:linear-gradient(135deg,{c1},{c2});color:white;margin-bottom:8px;">
+            st.markdown(f"""<div class="nav-card" style="background:linear-gradient(135deg,{c1},{c2});">
                 <div style="font-size:2.5em;">{icon}</div>
-                <div style="font-weight:bold;font-size:1.1em;">{title}</div>
-                <div style="font-size:0.8em;opacity:0.9;">{desc}</div>
+                <div style="font-weight:700;font-size:1.1em;">{title}</div>
+                <div style="font-size:0.8em;opacity:0.85;margin-top:5px;">{desc}</div>
             </div>""", unsafe_allow_html=True)
             if st.button(btn_text, key=btn_key, use_container_width=True):
                 st.session_state.current_page = target
                 st.rerun()
 
     st.markdown("---")
-    st.caption("江南大学 · 大学生创新训练计划项目 | 数据来源：豆瓣读书公开数据集 | 共计 288,824 本图书")
+    st.caption("江南大学 · 大学生创新训练计划项目 | 豆瓣读书公开数据集 | 288,824 本图书")
+
 
 elif page == "🏆 排行榜":
     st.title("🏆 贝叶斯加权评分排行榜")
