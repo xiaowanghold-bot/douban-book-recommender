@@ -153,27 +153,6 @@ if page == "\U0001f3e0 首页":
     <div class="hero-subtitle">基于 28 万豆瓣数据 · 智能图书分析与推荐平台</div>
     """, unsafe_allow_html=True)
 
-    # ====== Animated Stats ======
-    stats = [
-        ("📕", "收录图书", f"{len(df):,}", f"原始数据 288K"),
-        ("⭐", "平均评分", f"{df['rating'].mean():.1f}", f"最高 {df['rating'].max():.1f}"),
-        ("👥", "评价过万", f"{(df['votes']>=10000).sum():,}", f"过千 {(df['votes']>=1000).sum():,}"),
-        ("🏢", "出版社", "221", "878 位作者"),
-        ("📈", "推荐引擎", "163K", "30 近邻/本"),
-    ]
-    cols = st.columns(5)
-    for icon, label, value, delta in stats:
-        with cols[len([s for s in stats if s[0] == icon]) if False else stats.index((icon, label, value, delta))]:
-            st.markdown(f"""<div class="stat-card">
-                <div class="stat-icon">{icon}</div>
-                <div class="stat-value">{value}</div>
-                <div class="stat-label">{label}</div>
-                <div class="stat-delta">{delta}</div>
-            </div>""", unsafe_allow_html=True)
-
-    # Fix the stats loop
-    st.markdown("---")
-    
     # Fix: properly use columns
     c_s1, c_s2, c_s3, c_s4, c_s5 = st.columns(5)
     stat_data = [
