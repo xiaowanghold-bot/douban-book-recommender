@@ -71,13 +71,19 @@ st.sidebar.markdown("---")
 
 pages_list = ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
                "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"]
+
 if "current_page" not in st.session_state:
     st.session_state.current_page = "🏠 首页"
-page = st.sidebar.radio("导航菜单", pages_list,
+
+# 用 index 参数控制 radio 当前选中项
+page = st.sidebar.radio(
+    "导航菜单", pages_list,
     index=pages_list.index(st.session_state.current_page),
-    key="sidebar_radio")
-# Sync radio selection back to session state
-st.session_state.current_page = page
+)
+# 用户手动点 radio 时同步回 session_state
+if page != st.session_state.current_page:
+    st.session_state.current_page = page
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"数据总量: {len(df):,} 本")
