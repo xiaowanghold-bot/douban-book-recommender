@@ -69,11 +69,11 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 st.sidebar.markdown("# 📚 豆瓣图书评价与推荐系统")
 st.sidebar.markdown("---")
 
-page = st.sidebar.radio(
-    "导航菜单",
-    ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
-     "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"],
-)
+pages_list = ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
+               "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"]
+if "page" not in st.session_state:
+    st.session_state.page = "🏠 首页"
+page = st.sidebar.radio("导航菜单", pages_list, key="page")
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"数据总量: {len(df):,} 本")
@@ -221,29 +221,61 @@ if page == "🏠 首页":
 
     # ====== Feature Navigation Cards ======
     st.markdown("### 🚀 探索更多功能")
+    st.caption("点击卡片跳转到对应功能页面")
+
     fc1, fc2, fc3, fc4 = st.columns(4)
 
-    card_style = """
-    <div style="border:1px solid #e0e0e0; border-radius:12px; padding:18px; text-align:center; height:160px;
-                background:linear-gradient(135deg, {color1}, {color2}); color:white; cursor:pointer;">
-        <div style="font-size:2.5em;">{icon}</div>
-        <div style="font-weight:bold; font-size:1.1em; margin-top:8px;">{title}</div>
-        <div style="font-size:0.8em; opacity:0.9; margin-top:5px;">{desc}</div>
-    </div>
-    """
+    with fc1:
+        st.markdown("""
+        <div style="border-radius:12px; padding:15px; text-align:center;
+                    background:linear-gradient(135deg, #667eea, #764ba2); color:white; margin-bottom:10px;">
+            <div style="font-size:2.5em;">🏆</div>
+            <div style="font-weight:bold; font-size:1.1em;">贝叶斯排行榜</div>
+            <div style="font-size:0.8em; opacity:0.9;">科学的图书评分排名</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("前往排行榜", key="btn_ranking", use_container_width=True):
+            st.session_state.page = "🏆 排行榜"
+            st.rerun()
 
-    cards = [
-        ("🏆", "贝叶斯排行榜", "科学的图书评分排名", "#667eea", "#764ba2"),
-        ("🔍", "智能搜书推荐", "基于内容的相似图书", "#f093fb", "#f5576c"),
-        ("🏢", "出版社与作者", "221家出版社 + 878位作者", "#4facfe", "#00f2fe"),
-        ("🔮", "评分预测", "RandomForest 回归模型", "#43e97b", "#38f9d7"),
-    ]
+    with fc2:
+        st.markdown("""
+        <div style="border-radius:12px; padding:15px; text-align:center;
+                    background:linear-gradient(135deg, #f093fb, #f5576c); color:white; margin-bottom:10px;">
+            <div style="font-size:2.5em;">🔍</div>
+            <div style="font-weight:bold; font-size:1.1em;">智能搜书推荐</div>
+            <div style="font-size:0.8em; opacity:0.9;">基于内容的相似图书</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("前往搜书", key="btn_search", use_container_width=True):
+            st.session_state.page = "🔍 搜书推荐"
+            st.rerun()
 
-    for idx, (icon, title, desc, c1, c2) in enumerate(cards):
-        with [fc1, fc2, fc3, fc4][idx]:
-            st.markdown(card_style.format(icon=icon, title=title, desc=desc, color1=c1, color2=c2),
-                        unsafe_allow_html=True)
+    with fc3:
+        st.markdown("""
+        <div style="border-radius:12px; padding:15px; text-align:center;
+                    background:linear-gradient(135deg, #4facfe, #00f2fe); color:white; margin-bottom:10px;">
+            <div style="font-size:2.5em;">🏢</div>
+            <div style="font-weight:bold; font-size:1.1em;">出版社与作者</div>
+            <div style="font-size:0.8em; opacity:0.9;">221家出版社 + 878位作者</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("前往分析", key="btn_pub", use_container_width=True):
+            st.session_state.page = "🏢 出版社与作者"
+            st.rerun()
 
+    with fc4:
+        st.markdown("""
+        <div style="border-radius:12px; padding:15px; text-align:center;
+                    background:linear-gradient(135deg, #43e97b, #38f9d7); color:white; margin-bottom:10px;">
+            <div style="font-size:2.5em;">🔮</div>
+            <div style="font-weight:bold; font-size:1.1em;">评分预测</div>
+            <div style="font-size:0.8em; opacity:0.9;">RandomForest 回归模型</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("前往预测", key="btn_pred", use_container_width=True):
+            st.session_state.page = "🔮 评分预测"
+            st.rerun()
     st.markdown("---")
     st.caption("📧 江南大学 · 大学生创新训练计划项目 | 数据来源：豆瓣读书公开数据集 | 共计 288,824 本图书")
 
