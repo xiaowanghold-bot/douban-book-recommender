@@ -274,15 +274,80 @@ elif page == "🏢 出版社与作者":
 # ======================================================================
 #  评分预测
 # ======================================================================
+# ======================================================================
+#  评分预测
+# ======================================================================
 elif page == "🔮 评分预测":
     st.title("🔮 图书评分预测")
     st.markdown("*基于作者、出版社、年份、价格等特征，RandomForest 预测评分*")
 
+    # 热门列表
+    TOP_PUBLISHERS = [
+        "上海文艺出版社",
+        "人民文学出版社",
+        "上海出版公司",
+        "新星出版社",
+        "吉林出版社",
+        "北京师范大学出版社",
+        "江苏文艺出版社",
+        "中信出版社",
+        "生活·读书·新知三联书店",
+        "广西师范大学出版社",
+        "作家出版社",
+        "上海译文出版社",
+        "中华书局",
+        "译林出版社",
+        "南海出版公司",
+        "北京大学出版社",
+        "商务印书馆",
+        "重庆大学出版社",
+        "上海人民出版社",
+        "浙江文艺出版社"
+    ]
+    TOP_AUTHORS = [
+        "东野圭吾",
+        "村上春树",
+        "金庸",
+        "三毛",
+        "王小波",
+        "鲁迅",
+        "阿加莎·克里斯蒂",
+        "莫言",
+        "张爱玲",
+        "余华",
+        "钱钟书",
+        "严歌苓",
+        "韩寒",
+        "刘慈欣",
+        "太宰治",
+        "桐华",
+        "杨绛",
+        "马尔克斯",
+        "乔治·奥威尔"
+    ]
+
     c1, c2 = st.columns([2, 3])
     with c1:
         st.markdown("### 📝 输入图书信息")
-        author = st.text_input("作者", value="余华")
-        publisher = st.text_input("出版社", value="人民文学出版社")
+
+        # 出版社：下拉推荐 + 自定义
+        pub_options = TOP_PUBLISHERS + ["✏️ 其他（手动输入）"]
+        pub_choice = st.selectbox("出版社（热门推荐）", pub_options, index=1)
+        if pub_choice == "✏️ 其他（手动输入）":
+            publisher = st.text_input("请输入出版社名称", placeholder="例如：机械工业出版社")
+        else:
+            publisher = pub_choice
+            st.caption(f"已选：{publisher}")
+
+        # 作者：下拉推荐 + 自定义
+        author_options = TOP_AUTHORS + ["✏️ 其他（手动输入）"]
+        author_choice = st.selectbox("作者（热门推荐）", author_options, index=9)
+        if author_choice == "✏️ 其他（手动输入）":
+            author = st.text_input("请输入作者名称", placeholder="例如：当年明月")
+        else:
+            author = author_choice
+            st.caption(f"已选：{author}")
+
         price = st.number_input("价格 (元)", 0.0, 2000.0, 39.5, 0.5)
         year = st.number_input("出版年份", 1950, 2026, 2014)
         pages = st.number_input("页数", 10, 5000, 300)
@@ -339,9 +404,6 @@ elif page == "🔮 评分预测":
         if (FIG_DIR / "16_prediction_scatter.png").exists():
             st.image(str(FIG_DIR / "16_prediction_scatter.png"), use_container_width=True)
 
-# ======================================================================
-#  更多发现
-# ======================================================================
 elif page == "💡 更多发现":
     st.title("💡 更多发现")
 
