@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 venv/
 __pycache__/
 *.pyc
@@ -9,7 +9,6 @@ __pycache__/
 data/raw/
 
 # Models (regeneratable via src/recommendation.py)
-data/models/
 
 # Crawler logs
 crawler/crawl_log.txt
