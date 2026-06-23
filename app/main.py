@@ -71,9 +71,13 @@ st.sidebar.markdown("---")
 
 pages_list = ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
                "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"]
-if "page" not in st.session_state:
-    st.session_state.page = "🏠 首页"
-page = st.sidebar.radio("导航菜单", pages_list, key="page")
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "🏠 首页"
+page = st.sidebar.radio("导航菜单", pages_list,
+    index=pages_list.index(st.session_state.current_page),
+    key="sidebar_radio")
+# Sync radio selection back to session state
+st.session_state.current_page = page
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"数据总量: {len(df):,} 本")
@@ -235,7 +239,7 @@ if page == "🏠 首页":
         </div>
         """, unsafe_allow_html=True)
         if st.button("前往排行榜", key="btn_ranking", use_container_width=True):
-            st.session_state.page = "🏆 排行榜"
+            st.session_state.current_page = "🏆 排行榜"
             st.rerun()
 
     with fc2:
@@ -248,7 +252,7 @@ if page == "🏠 首页":
         </div>
         """, unsafe_allow_html=True)
         if st.button("前往搜书", key="btn_search", use_container_width=True):
-            st.session_state.page = "🔍 搜书推荐"
+            st.session_state.current_page = "🔍 搜书推荐"
             st.rerun()
 
     with fc3:
@@ -261,7 +265,7 @@ if page == "🏠 首页":
         </div>
         """, unsafe_allow_html=True)
         if st.button("前往分析", key="btn_pub", use_container_width=True):
-            st.session_state.page = "🏢 出版社与作者"
+            st.session_state.current_page = "🏢 出版社与作者"
             st.rerun()
 
     with fc4:
@@ -274,7 +278,7 @@ if page == "🏠 首页":
         </div>
         """, unsafe_allow_html=True)
         if st.button("前往预测", key="btn_pred", use_container_width=True):
-            st.session_state.page = "🔮 评分预测"
+            st.session_state.current_page = "🔮 评分预测"
             st.rerun()
     st.markdown("---")
     st.caption("📧 江南大学 · 大学生创新训练计划项目 | 数据来源：豆瓣读书公开数据集 | 共计 288,824 本图书")
