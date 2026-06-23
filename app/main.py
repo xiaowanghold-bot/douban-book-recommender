@@ -1,4 +1,4 @@
-"""
+﻿"""
 豆瓣读书图书评价与推荐系统 - Streamlit Web 应用
 江南大学大学生创新训练计划项目
 """
@@ -6,14 +6,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import sys
+import pickle
+import re
 from pathlib import Path
-from PIL import Image
 
-# 添加 src 到路径
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from recommendation import BookRecommender
 
-# ========== 页面配置 ==========
 st.set_page_config(
     page_title="豆瓣图书评价与推荐系统",
     page_icon="📚",
@@ -21,11 +20,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ========== 数据加载（缓存）==========
+# ========== 缓存加载 ==========
 
 @st.cache_resource
 def load_recommender():
-    """加载推荐引擎（全局单例）"""
     rec = BookRecommender()
     rec._load_artifacts()
     nn = np.load(str(Path(__file__).parent.parent / "data" / "models" / "nn_neighbors.npz"))
@@ -35,36 +33,58 @@ def load_recommender():
 
 @st.cache_data
 def load_scored_data():
-    """加载评分数据"""
-    path = Path(__file__).parent.parent / "data" / "processed" / "books_scored.csv"
-    return pd.read_csv(path, encoding="utf-8-sig")
+    return pd.read_csv(
+        Path(__file__).parent.parent / "data" / "processed" / "books_scored.csv",
+        encoding="utf-8-sig")
 
 @st.cache_data
-def load_cleaned_data():
-    """加载清洗后数据"""
-    path = Path(__file__).parent.parent / "data" / "processed" / "books_cleaned.csv"
-    return pd.read_csv(path, encoding="utf-8-sig")
+def load_price_data():
+    p = Path(__file__).parent.parent / "data" / "processed" / "books_with_price.csv"
+    return pd.read_csv(p, encoding="utf-8-sig") if p.exists() else None
 
-# ========== 初始化 ==========
+@st.cache_data
+def load_pub_stats():
+    p = Path(__file__).parent.parent / "data" / "processed" / "publisher_stats.csv"
+    return pd.read_csv(p, encoding="utf-8-sig", index_col=0) if p.exists() else None
+
+@st.cache_data
+def load_author_stats():
+    p = Path(__file__).parent.parent / "data" / "processed" / "author_stats.csv"
+    return pd.read_csv(p, encoding="utf-8-sig", index_col=0) if p.exists() else None
+
+@st.cache_resource
+def load_predictor():
+    p = Path(__file__).parent.parent / "data" / "models" / "rating_predictor.pkl"
+    if not p.exists():
+        return None
+    with open(p, "rb") as f:
+        return pickle.load(f)
+
 rec = load_recommender()
 df = load_scored_data()
+FIG_DIR = Path(__file__).parent.parent / "reports" / "figures"
+DATA_DIR = Path(__file__).parent.parent / "data"
 
-# ========== 侧边栏导航 ==========
+# ========== 侧边栏 ==========
 st.sidebar.markdown("# 📚 豆瓣图书评价与推荐系统")
 st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "导航菜单",
-    ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐", "📊 数据洞察", "ℹ️ 关于项目"],
+    ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐", "📊 数据洞察",
+     "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"],
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"数据总量: {len(df):,} 本图书")
-st.sidebar.caption(f"贝叶斯评分模型: 已就绪")
-st.sidebar.caption(f"推荐引擎: 已就绪")
-st.sidebar.caption("江南大学 · 大学生创新训练计划")
+st.sidebar.caption(f"数据总量: {len(df):,} 本")
+st.sidebar.caption(f"爬虫完成: 6,575 本详细信息")
+st.sidebar.caption(f"推荐引擎: TF-IDF + 余弦相似度")
+st.sidebar.caption(f"评分预测: RandomForest MAE=0.40")
+st.sidebar.caption("江南大学 · 大创项目")
 
-# ========== 首页 ==========
+# ======================================================================
+#  首页
+# ======================================================================
 if page == "🏠 首页":
     st.title("📚 豆瓣图书评价与推荐系统")
     st.markdown("### 基于豆瓣读书数据的智能图书评价与推荐平台")
@@ -81,35 +101,52 @@ if page == "🏠 首页":
 
     st.markdown("---")
 
-    st.markdown("### 🎯 项目功能")
-    col_a, col_b = st.columns(2)
+    st.markdown("### 🎯 项目功能总览")
+    col_a, col_b, col_c = st.columns(3)
+
     with col_a:
         st.markdown("""
         **📊 数据洞察**
-        - 174,244 本图书的评分分布分析
+        - 174,244 本图书评分分布
         - 评价人数对数分布
-        - 评分与评价人数关系
         - 相关性热力图
-        """)
-        st.markdown("""
-        **🏆 贝叶斯加权排名**
-        - 消除评价人数偏差
-        - 小众高质图书也能上榜
-        - 参数 m 优化分析
         """)
     with col_b:
         st.markdown("""
-        **🔍 智能推荐**
-        - 基于中文书名的字符级 N-gram 相似度
-        - TF-IDF + 余弦相似度匹配
-        - 混合推荐：内容相似度 + 贝叶斯评分
-        - 去重同书名多版本
+        **🏆 贝叶斯排名**
+        - 消除评价人数偏差
+        - 小众高质图书上榜
+        - m 参数优化分析
         """)
+    with col_c:
         st.markdown("""
-        **📈 出版社/作者分析**（待爬虫完成）
-        - 出版社评价矩阵
-        - 作者影响力排行
-        - 出版年份趋势
+        **🔍 智能推荐**
+        - 字符级 N-gram 相似度
+        - TF-IDF + 余弦匹配
+        - 混合推荐策略
+        """)
+
+    col_d, col_e, col_f = st.columns(3)
+    with col_d:
+        st.markdown("""
+        **🏢 出版社/作者**
+        - 221 家出版社排名
+        - 878 位作者影响力
+        - 二维评价矩阵
+        """)
+    with col_e:
+        st.markdown("""
+        **🔮 评分预测**
+        - RandomForest 回归
+        - 7 维特征预测
+        - MAE = 0.40
+        """)
+    with col_f:
+        st.markdown("""
+        **💡 更多发现**
+        - 书名词云
+        - 价格分析
+        - 高性价比书单
         """)
 
     st.markdown("---")
@@ -121,416 +158,269 @@ if page == "🏠 首页":
             score = row["bayesian_score"]
             color = "🟢" if score > 9.5 else "🟡" if score > 9.0 else "🟠"
             st.metric(
-                label=f"{color} {row['title'][:16]}",
+                label=f"{color} {str(row['title'])[:16]}",
                 value=f"{row['rating']:.1f} 分",
                 delta=f"{int(row['votes']):,} 人评价",
             )
 
-# ========== 排行榜 ==========
+# ======================================================================
+#  排行榜
+# ======================================================================
 elif page == "🏆 排行榜":
     st.title("🏆 贝叶斯加权评分排行榜")
-    st.markdown("*基于贝叶斯平均算法，平衡评分高低与评价人数的影响*")
+    st.markdown("*基于贝叶斯平均算法，平衡评分高低与评价人数*")
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
+    c1, c2 = st.columns([1, 3])
+    with c1:
         min_votes = st.slider("最少评价人数", 0, 10000, 50, 100)
         top_n = st.slider("显示数量", 10, 100, 50, 10)
-
     top = df[df["votes"] >= min_votes].nlargest(top_n, "bayesian_score")
-
-    # 排名变化
-    raw_rank = df[df["votes"] >= min_votes].nlargest(top_n, "rating")
-    top["raw_rank"] = range(1, len(top) + 1)
-
-    col2.markdown(f"### Top {top_n}（评价人数 ≥ {min_votes}）")
-
-    # 样式化表格
-    display_df = top[["title", "rating", "votes", "bayesian_score"]].copy()
-    display_df.columns = ["书名", "评分", "评价人数", "贝叶斯评分"]
-    display_df.index = range(1, len(display_df) + 1)
-
-    col2.dataframe(
-        display_df.style
-        .format({"评分": "{:.1f}", "贝叶斯评分": "{:.4f}", "评价人数": "{:,}"})
+    disp = top[["title", "rating", "votes", "bayesian_score"]].copy()
+    disp.columns = ["书名", "评分", "评价人数", "贝叶斯评分"]
+    disp.index = range(1, len(disp) + 1)
+    c2.dataframe(
+        disp.style.format({"评分": "{:.1f}", "贝叶斯评分": "{:.4f}", "评价人数": "{:,}"})
         .background_gradient(subset=["贝叶斯评分"], cmap="YlOrRd"),
-        use_container_width=True,
-        height=600,
+        use_container_width=True, height=600,
     )
-
-    # 下载按钮
-    csv = display_df.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
+    csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
 
-# ========== 搜书推荐 ==========
+# ======================================================================
+#  搜书推荐
+# ======================================================================
 elif page == "🔍 搜书推荐":
     st.title("🔍 搜书 & 智能推荐")
-    st.markdown("*输入书名关键词，获取相似图书推荐*")
-
     query = st.text_input("输入书名或关键词", placeholder="例如：三体、活着、百年孤独...")
-
     if query:
         with st.spinner("搜索中..."):
             results = rec.recommend_by_title(query, top_n=20)
-
         if results.empty:
-            st.warning("未找到相关图书，请尝试其他关键词")
+            st.warning("未找到相关图书")
         else:
-            # 选择目标图书
-            book_titles = [f"{row['title']}（{row['rating']:.1f}分 {int(row['votes']):,}人）"
-                           for _, row in results.iterrows()]
-
-            selected_idx = st.selectbox(
-                "选择一本图书查看推荐",
-                range(len(book_titles)),
-                format_func=lambda i: book_titles[i],
-            )
-
-            if selected_idx is not None:
-                selected = results.iloc[selected_idx]
-                book_id = int(selected["id"])
-
-                col_a, col_b = st.columns([1, 2])
-                with col_a:
+            book_titles = [f"{r['title']}（{r['rating']:.1f}分 {int(r['votes']):,}人）"
+                           for _, r in results.iterrows()]
+            sel = st.selectbox("选择图书查看推荐", range(len(book_titles)),
+                               format_func=lambda i: book_titles[i])
+            if sel is not None:
+                selected = results.iloc[sel]
+                bid = int(selected["id"])
+                ca, cb = st.columns([1, 2])
+                with ca:
                     st.markdown("### 📖 选中图书")
                     st.metric("书名", selected["title"])
                     st.metric("评分", f"{selected['rating']:.1f} / 10")
                     st.metric("评价人数", f"{int(selected['votes']):,}")
-                    st.metric("贝叶斯评分", f"{selected['bayesian_score']:.4f}")
+                with cb:
+                    t1, t2 = st.tabs(["📚 内容推荐", "🔀 混合推荐"])
+                    with t1:
+                        recs = rec.recommend_by_id(bid, top_n=10)
+                        for i, (_, r) in enumerate(recs.iterrows()):
+                            st.markdown(f"**{i+1}. {r['title']}** ⭐{r['rating']:.1f} 📊{int(r['votes']):,}人 `{r['similarity']:.2%}`")
+                            st.progress(float(r["similarity"]))
+                    with t2:
+                        hyb = rec.hybrid_recommend(bid, top_n=10)
+                        for i, (_, r) in enumerate(hyb.iterrows()):
+                            st.markdown(f"**{i+1}. {r['title']}** ⭐{r['rating']:.1f} 📊{int(r['votes']):,}人 `{r['hybrid_score']:.4f}`")
+                            st.progress(float(r["hybrid_score"]))
 
-                with col_b:
-                    tab1, tab2 = st.tabs(["📚 内容推荐", "🔀 混合推荐"])
-
-                    with tab1:
-                        recs = rec.recommend_by_id(book_id, top_n=10)
-                        if not recs.empty:
-                            for i, (_, row) in enumerate(recs.iterrows()):
-                                sim_bar = "█" * int(row["similarity"] * 20)
-                                st.markdown(
-                                    f"**{i+1}. {row['title']}**  "
-                                    f"⭐{row['rating']:.1f}  "
-                                    f"📊{int(row['votes']):,}人  "
-                                    f"`相似度 {row['similarity']:.2%}`"
-                                )
-                                st.progress(float(row["similarity"]))
-
-                    with tab2:
-                        hyb_recs = rec.hybrid_recommend(book_id, top_n=10, alpha=0.5)
-                        if not hyb_recs.empty:
-                            for i, (_, row) in enumerate(hyb_recs.iterrows()):
-                                st.markdown(
-                                    f"**{i+1}. {row['title']}**  "
-                                    f"⭐{row['rating']:.1f}  "
-                                    f"📊{int(row['votes']):,}人  "
-                                    f"`混合分 {row['hybrid_score']:.4f}`"
-                                )
-                                st.progress(float(row["hybrid_score"]))
-
-# ========== 数据洞察 ==========
+# ======================================================================
+#  数据洞察
+# ======================================================================
 elif page == "📊 数据洞察":
     st.title("📊 探索性数据分析")
-
-    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
-
-    st.markdown("### 评分与评价人数分布")
-    col1, col2 = st.columns(2)
-    with col1:
-        if (fig_dir / "01_rating_distribution.png").exists():
-            st.image(str(fig_dir / "01_rating_distribution.png"), caption="评分分布")
-    with col2:
-        if (fig_dir / "02_votes_distribution.png").exists():
-            st.image(str(fig_dir / "02_votes_distribution.png"), caption="评价人数分布")
+    figs = [
+        ("评分分布", "01_rating_distribution.png"),
+        ("评价人数分布", "02_votes_distribution.png"),
+    ]
+    c1, c2 = st.columns(2)
+    for i, (title, fn) in enumerate(figs):
+        p = FIG_DIR / fn
+        [c1, c2][i].image(str(p), caption=title) if p.exists() else None
 
     st.markdown("### 评分与评价人数关系")
-    if (fig_dir / "03_rating_vs_votes.png").exists():
-        st.image(str(fig_dir / "03_rating_vs_votes.png"), use_container_width=True)
+    if (FIG_DIR / "03_rating_vs_votes.png").exists():
+        st.image(str(FIG_DIR / "03_rating_vs_votes.png"), use_container_width=True)
 
-    st.markdown("### 评分等级与评价人数等级")
-    col1, col2 = st.columns(2)
-    with col1:
-        if (fig_dir / "05_rating_tiers.png").exists():
-            st.image(str(fig_dir / "05_rating_tiers.png"))
-    with col2:
-        if (fig_dir / "06_votes_tiers.png").exists():
-            st.image(str(fig_dir / "06_votes_tiers.png"))
+    figs2 = [
+        ("评分等级", "05_rating_tiers.png"),
+        ("评价人数等级", "06_votes_tiers.png"),
+        ("相关性热力图", "07_correlation_heatmap.png"),
+        ("m参数分析", "08_m_parameter_analysis.png"),
+    ]
+    c1, c2, c3, c4 = st.columns(4)
+    for i, (title, fn) in enumerate(figs2):
+        p = FIG_DIR / fn
+        [c1, c2, c3, c4][i].image(str(p), caption=title) if p.exists() else None
 
-    st.markdown("### 相关性分析 & 贝叶斯参数优化")
-    col1, col2 = st.columns(2)
-    with col1:
-        if (fig_dir / "07_correlation_heatmap.png").exists():
-            st.image(str(fig_dir / "07_correlation_heatmap.png"))
-    with col2:
-        if (fig_dir / "08_m_parameter_analysis.png").exists():
-            st.image(str(fig_dir / "08_m_parameter_analysis.png"))
+    if (FIG_DIR / "09_bayesian_top15.png").exists():
+        st.image(str(FIG_DIR / "09_bayesian_top15.png"), use_container_width=True)
 
-    st.markdown("### 贝叶斯 Top 15 vs 原始 Top 15")
-    if (fig_dir / "09_bayesian_top15.png").exists():
-        st.image(str(fig_dir / "09_bayesian_top15.png"), use_container_width=True)
-
-# ========== 关于 ==========
-
-# ========== 出版社与作者 ==========
+# ======================================================================
+#  出版社与作者
+# ======================================================================
 elif page == "🏢 出版社与作者":
     st.title("🏢 出版社与作者分析")
     st.markdown("*基于爬虫获取的 6,575 本高分图书详细信息*")
 
-    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
-    data_dir = Path(__file__).parent.parent / "data" / "processed"
-
-    # 加载分析数据
-    @st.cache_data
-    def load_pub_stats():
-        path = data_dir / "publisher_stats.csv"
-        if path.exists():
-            return pd.read_csv(path, encoding="utf-8-sig", index_col=0)
-        return None
-
-    @st.cache_data
-    def load_author_stats():
-        path = data_dir / "author_stats.csv"
-        if path.exists():
-            return pd.read_csv(path, encoding="utf-8-sig", index_col=0)
-        return None
-
     pub_stats = load_pub_stats()
-    author_stats = load_author_stats()
-
     if pub_stats is not None:
-        st.markdown("### 📚 出版社综合评价矩阵")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("出版社总数", len(pub_stats))
-        with col2:
-            st.metric("平均每社图书", f"{pub_stats['book_count'].mean():.1f} 本")
-
-        # Top 出版社表格
-        top_pub = pub_stats.head(15)[["book_count", "avg_rating", "avg_bayesian", "pub_score"]]
-        top_pub.columns = ["图书数量", "平均评分", "贝叶斯均分", "综合评分"]
-        top_pub.index = [f"{i+1}. {n}" for i, n in enumerate(top_pub.index)]
+        st.markdown("### 📚 出版社综合评价")
+        c1, c2 = st.columns(2)
+        c1.metric("出版社总数", len(pub_stats))
+        c2.metric("平均每社图书", f"{pub_stats['book_count'].mean():.1f} 本")
+        tp = pub_stats.head(15)[["book_count", "avg_rating", "pub_score"]]
+        tp.columns = ["图书数量", "平均评分", "综合评分"]
+        tp.index = [f"{i+1}. {n}" for i, n in enumerate(tp.index)]
         st.dataframe(
-            top_pub.style
-            .format({"平均评分": "{:.2f}", "贝叶斯均分": "{:.4f}", "综合评分": "{:.4f}", "图书数量": "{:.0f}"})
+            tp.style.format({"平均评分": "{:.2f}", "综合评分": "{:.4f}", "图书数量": "{:.0f}"})
             .background_gradient(subset=["综合评分"], cmap="YlOrRd"),
             use_container_width=True,
         )
+        if (FIG_DIR / "10_publisher_matrix.png").exists():
+            st.image(str(FIG_DIR / "10_publisher_matrix.png"), use_container_width=True)
 
-        st.markdown("### 📈 出版社二维评价矩阵")
-        if (fig_dir / "10_publisher_matrix.png").exists():
-            st.image(str(fig_dir / "10_publisher_matrix.png"), use_container_width=True)
-
-    if author_stats is not None:
+    auth_stats = load_author_stats()
+    if auth_stats is not None:
         st.markdown("---")
-        st.markdown("### ✍️ 作者影响力分析")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("作者总数", len(author_stats))
-        with col2:
-            st.metric("中国作者", int((author_stats["nationality"] == "中国").sum()))
-        with col3:
-            st.metric("外国作者", int((author_stats["nationality"] != "中国").sum()))
-
-        # Top 作者表格
-        top_author = author_stats.head(15)[["book_count", "nationality", "avg_rating", "author_score", "influence"]]
-        top_author.columns = ["图书数量", "国籍", "平均评分", "作者评分", "影响力"]
-        top_author.index = [f"{i+1}. {n}" for i, n in enumerate(top_author.index)]
+        st.markdown("### ✍️ 作者影响力")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("作者总数", len(auth_stats))
+        c2.metric("中国作者", int((auth_stats["nationality"] == "中国").sum()))
+        c3.metric("外国作者", int((auth_stats["nationality"] != "中国").sum()))
+        ta = auth_stats.head(15)[["book_count", "nationality", "avg_rating", "influence"]]
+        ta.columns = ["图书数量", "国籍", "平均评分", "影响力"]
+        ta.index = [f"{i+1}. {n}" for i, n in enumerate(ta.index)]
         st.dataframe(
-            top_author.style
-            .format({"平均评分": "{:.2f}", "作者评分": "{:.4f}", "影响力": "{:.1f}", "图书数量": "{:.0f}"})
+            ta.style.format({"平均评分": "{:.2f}", "影响力": "{:.1f}", "图书数量": "{:.0f}"})
             .background_gradient(subset=["影响力"], cmap="YlOrRd"),
             use_container_width=True,
         )
+        if (FIG_DIR / "11_author_influence.png").exists():
+            st.image(str(FIG_DIR / "11_author_influence.png"), use_container_width=True)
 
-        st.markdown("### 📊 作者影响力与国籍分布")
-        if (fig_dir / "11_author_influence.png").exists():
-            st.image(str(fig_dir / "11_author_influence.png"), use_container_width=True)
+    if (FIG_DIR / "12_year_trend.png").exists():
+        st.markdown("### 📅 出版年份趋势")
+        st.image(str(FIG_DIR / "12_year_trend.png"), use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("### 📅 出版年份趋势")
-    if (fig_dir / "12_year_trend.png").exists():
-        st.image(str(fig_dir / "12_year_trend.png"), use_container_width=True)
-
-
-# ========== 评分预测 ==========
+# ======================================================================
+#  评分预测
+# ======================================================================
 elif page == "🔮 评分预测":
     st.title("🔮 图书评分预测")
-    st.markdown("*基于作者、出版社、年份、价格等特征，用随机森林模型预测图书评分*")
+    st.markdown("*基于作者、出版社、年份、价格等特征，RandomForest 预测评分*")
 
-    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
-    model_dir = Path(__file__).parent.parent / "data" / "models"
-
-    col1, col2 = st.columns([2, 3])
-
-    with col1:
+    c1, c2 = st.columns([2, 3])
+    with c1:
         st.markdown("### 📝 输入图书信息")
-
-        author = st.text_input("作者", value="余华", placeholder="例如：余华")
-        publisher = st.text_input("出版社", value="人民文学出版社", placeholder="例如：人民文学出版社")
-        price = st.number_input("价格 (元)", min_value=0.0, max_value=2000.0, value=39.5, step=0.5)
-        year = st.number_input("出版年份", min_value=1950, max_value=2026, value=2014)
-        pages = st.number_input("页数", min_value=10, max_value=5000, value=300)
-        votes = st.number_input("评价人数", min_value=0, max_value=10000000, value=50000)
+        author = st.text_input("作者", value="余华")
+        publisher = st.text_input("出版社", value="人民文学出版社")
+        price = st.number_input("价格 (元)", 0.0, 2000.0, 39.5, 0.5)
+        year = st.number_input("出版年份", 1950, 2026, 2014)
+        pages = st.number_input("页数", 10, 5000, 300)
+        votes = st.number_input("评价人数", 0, 10000000, 50000)
         binding = st.selectbox("装帧", ["平装", "精装", "其他"])
 
         if st.button("🎯 预测评分", type="primary"):
-            try:
-                import pickle, numpy as np, pandas as pd, re
-                sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-                from enhancements import RatingPredictor
+            saved = load_predictor()
+            if saved is None:
+                st.error("模型文件未找到")
+            else:
+                try:
+                    from enhancements import RatingPredictor
+                    rp = RatingPredictor()
+                    rp.model = saved["model"]
+                    rp.encoders = saved["encoders"]
+                    rp.feature_names = saved["feature_names"]
+                    ref = pd.read_csv(
+                        DATA_DIR / "raw" / "Books_detail.csv", encoding="utf-8-sig")
+                    ref = ref[ref["crawl_status"] == "success"].copy()
+                    ref["author_clean"] = ref["author"].apply(
+                        lambda x: re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(x)).strip()[:30]
+                        if pd.notna(x) else "未知")
+                    ref["publisher_clean"] = ref["publisher"].fillna("未知").astype(str).str[:20]
+                    ref["binding_type"] = ref["binding"].fillna("未知").apply(
+                        lambda x: "平装" if "平装" in str(x) else ("精装" if "精装" in str(x) else "其他"))
+                    rp.df = ref
+                    pred = rp.predict(price, year, pages, votes, author, publisher, binding)
+                    if pred:
+                        st.success(f"预测评分: **{pred:.2f}** / 10")
+                        if pred >= 9.0:
+                            st.info("🏆 预测为高分图书！")
+                        elif pred >= 8.0:
+                            st.info("👍 预测为优良图书")
+                        elif pred >= 7.0:
+                            st.info("📖 预测为中等评分")
+                        else:
+                            st.info("📚 预测评分偏低")
+                except Exception as e:
+                    st.error(f"预测出错: {e}")
 
-                with open(model_dir / "rating_predictor.pkl", "rb") as f:
-                    saved = pickle.load(f)
-
-                rp = RatingPredictor()
-                rp.model = saved["model"]
-                rp.encoders = saved["encoders"]
-                rp.feature_names = saved["feature_names"]
-
-                # Load and prepare reference data for encoder
-                df = pd.read_csv(
-                    Path(__file__).parent.parent / "data" / "raw" / "Books_detail.csv",
-                    encoding="utf-8-sig")
-                df = df[df["crawl_status"] == "success"].copy()
-                df["author_clean"] = df["author"].apply(
-                    lambda x: re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(x)).strip()[:30]
-                    if pd.notna(x) else "unknown")
-                df["publisher_clean"] = df["publisher"].fillna("unknown").astype(str).str[:20]
-                df["binding_type"] = df["binding"].fillna("unknown").apply(
-                    lambda x: "平装" if "平装" in str(x) else ("精装" if "精装" in str(x) else "其他"))
-                rp.df = df
-
-                pred = rp.predict(price, year, pages, votes, author, publisher, binding)
-                if pred:
-                    st.success(f"预测评分: **{pred:.2f}** / 10")
-                    if pred >= 9.0:
-                        st.info("高分图书!")
-                    elif pred >= 8.0:
-                        st.info("优良图书")
-                    elif pred >= 7.0:
-                        st.info("中等评分")
-                    else:
-                        st.info("评分偏低")
-                else:
-                    st.error("预测失败")
-            except Exception as e:
-                st.error(f"预测出错: {e}")
-
-    with col2:
-        st.markdown("### 📊 模型性能")
-        try:
-            import pickle
-            with open(model_dir / "rating_predictor.pkl", "rb") as f:
-                saved = pickle.load(f)
-            metrics = saved.get("metrics", {})
-            col_m1, col_m2, col_m3 = st.columns(3)
-            with col_m1:
-                st.metric("MAE (平均误差)", f"{metrics.get('MAE', 0):.3f}")
-            with col_m2:
-                st.metric("R2 (拟合度)", f"{metrics.get('R2', 0):.3f}")
-            with col_m3:
-                st.metric("CV5 (交叉验证)", f"{metrics.get('CV_R2', 0):.3f}")
-        except:
-            pass
-
+    with c2:
+        saved = load_predictor()
+        if saved:
+            st.markdown("### 📊 模型性能")
+            m = saved.get("metrics", {})
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("MAE (平均误差)", f"{m.get('MAE', 0):.3f}")
+            mc2.metric("R² (拟合度)", f"{m.get('R2', 0):.3f}")
+            mc3.metric("CV5 (交叉验证)", f"{m.get('CV_R2', 0):.3f}")
         st.markdown("### 📈 特征重要性")
-        if (fig_dir / "15_feature_importance.png").exists():
-            st.image(str(fig_dir / "15_feature_importance.png"), use_container_width=True)
+        if (FIG_DIR / "15_feature_importance.png").exists():
+            st.image(str(FIG_DIR / "15_feature_importance.png"), use_container_width=True)
+        if (FIG_DIR / "16_prediction_scatter.png").exists():
+            st.image(str(FIG_DIR / "16_prediction_scatter.png"), use_container_width=True)
 
-        st.markdown("### 📉 预测 vs 真实")
-        if (fig_dir / "16_prediction_scatter.png").exists():
-            st.image(str(fig_dir / "16_prediction_scatter.png"), use_container_width=True)
-
-# ========== 更多发现 ==========
+# ======================================================================
+#  更多发现
+# ======================================================================
 elif page == "💡 更多发现":
     st.title("💡 更多发现")
-    fig_dir = Path(__file__).parent.parent / "reports" / "figures"
-    data_dir = Path(__file__).parent.parent / "data" / "processed"
 
-    # 词云
-    st.markdown("### ☁️ 高分图书书名词云")
-    if (fig_dir / "13_wordcloud.png").exists():
-        st.image(str(fig_dir / "13_wordcloud.png"), use_container_width=True)
+    if (FIG_DIR / "13_wordcloud.png").exists():
+        st.markdown("### ☁️ 高分图书书名词云")
+        st.image(str(FIG_DIR / "13_wordcloud.png"), use_container_width=True)
 
     st.markdown("---")
+    if (FIG_DIR / "14_price_analysis.png").exists():
+        st.markdown("### 💰 价格分析")
+        st.image(str(FIG_DIR / "14_price_analysis.png"), use_container_width=True)
 
-    # 价格分析
-    st.markdown("### 💰 价格分析")
-    if (fig_dir / "14_price_analysis.png").exists():
-        st.image(str(fig_dir / "14_price_analysis.png"), use_container_width=True)
-
-    # 高性价比图书
-    st.markdown("### 🏷️ 高性价比图书 (评分>=9, <=50元)")
-    try:
-        import pandas as pd
-        df_price = pd.read_csv(data_dir / "books_with_price.csv", encoding="utf-8-sig")
-        value_books = df_price[(df_price["Rating"] >= 9) & (df_price["price_num"] <= 50)]
-        value_books = value_books.nlargest(10, "Votes")[
-            ["Title", "Rating", "price_num", "author", "publisher", "Votes"]
-        ]
-        value_books.columns = ["书名", "评分", "价格(元)", "作者", "出版社", "评价人数"]
-        value_books.index = range(1, len(value_books) + 1)
+    price_df = load_price_data()
+    if price_df is not None:
+        st.markdown("### 🏷️ 高性价比图书 (评分>=9, <=50元)")
+        vb = price_df[(price_df["Rating"] >= 9) & (price_df["price_num"] <= 50)]
+        vb = vb.nlargest(10, "Votes")[["Title", "Rating", "price_num", "author", "Votes"]]
+        vb.columns = ["书名", "评分", "价格(元)", "作者", "评价人数"]
+        vb.index = range(1, len(vb) + 1)
         st.dataframe(
-            value_books.style
-            .format({"评分": "{:.1f}", "价格(元)": "{:.1f}", "评价人数": "{:,}"}),
+            vb.style.format({"评分": "{:.1f}", "价格(元)": "{:.1f}", "评价人数": "{:,}"}),
             use_container_width=True,
         )
-    except Exception as e:
-        st.warning(f"数据加载中: {e}")
 
+# ======================================================================
+#  关于项目
+# ======================================================================
 elif page == "ℹ️ 关于项目":
     st.title("ℹ️ 关于项目")
-
     st.markdown("""
-    ## 豆瓣图书评价与推荐系统
+## 豆瓣图书评价与推荐系统
+**江南大学大学生创新训练计划项目**
 
-    **江南大学大学生创新训练计划项目**
+### 技术方案
+- **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
+- **内容推荐引擎**：字符级 N-gram + TF-IDF + 余弦相似度，去重同书名
+- **出版社/作者分析**：221 家出版社、878 位作者综合评价矩阵
+- **评分预测**：RandomForest 回归，7 维特征，MAE = 0.40
 
-    ### 项目背景
-    豆瓣读书是国内最大的图书社区之一，拥有海量的用户评分数据。
-    然而，简单的算术平均评分容易受到评价人数偏差的影响——
-    一本只有10人评价的9.5分图书，与一本有10万人评价的9.0分图书，哪个更值得推荐？
+### 数据来源
+- 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)
+- 288,824 本基础数据 + 6,575 本爬虫详细信息
+- 481 个豆列 + 897 个标签
 
-    ### 技术方案
-
-    **1. 贝叶斯加权评分模型**
-    - 采用 IMDb 式的贝叶斯平均算法
-    - 公式: `BS = C/(C+m) × 全局平均 + m/(C+m) × 原始评分`
-    - 其中 m 为评价人数的 P50 中位数，C 为全局平均评分
-
-    **2. 内容推荐引擎**
-    - 对中文书名进行字符级 N-gram 分词
-    - TF-IDF 向量化 + L2 归一化
-    - 余弦相似度计算
-    - 同书名去重 + 混合贝叶斯评分排序
-
-    ### 数据来源
-    - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)
-    - 288,824 本图书基础数据
-    - 爬虫补全作者、出版社、价格等详细信息
-
-    ### 技术栈
-    - Python 3.12 + Streamlit
-    - pandas, numpy, scikit-learn
-    - matplotlib, seaborn, plotly
-    - jieba 中文分词
-
-    ### 项目结构
-    ```
-    ├── app/main.py          # Streamlit Web 应用
-    ├── src/
-    │   ├── data_cleaning.py # 数据清洗
-    │   ├── eda.py           # 探索性分析
-    │   ├── scoring.py       # 贝叶斯评分
-    │   └── recommendation.py # 推荐引擎
-    ├── crawler/             # 豆瓣爬虫
-    ├── data/                # 数据文件
-    ├── reports/             # 图表报告
-    └── notebooks/           # Jupyter 分析
-    ```
+### 技术栈
+Python 3.12 · Streamlit · pandas · scikit-learn · matplotlib · jieba · wordcloud
     """)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔗 快速入口")
-if st.sidebar.button("🏆 查看排行榜"):
-    st.switch_page("app/main.py")  # 通过 rerun 实现
-    st.rerun()
-if st.sidebar.button("🔍 搜书推荐"):
-    st.rerun()
+st.sidebar.success("📁 GitHub: xiaowanghold-bot/douban-book-recommender")
