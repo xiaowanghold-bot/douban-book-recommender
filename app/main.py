@@ -71,7 +71,7 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "导航菜单",
-    ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐", "📊 数据洞察",
+    ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
      "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现", "ℹ️ 关于项目"],
 )
 
@@ -223,38 +223,6 @@ elif page == "🔍 搜书推荐":
                         for i, (_, r) in enumerate(hyb.iterrows()):
                             st.markdown(f"**{i+1}. {r['title']}** ⭐{r['rating']:.1f} 📊{int(r['votes']):,}人 `{r['hybrid_score']:.4f}`")
                             st.progress(float(r["hybrid_score"]))
-
-# ======================================================================
-#  数据洞察
-# ======================================================================
-elif page == "📊 数据洞察":
-    st.title("📊 探索性数据分析")
-    figs = [
-        ("评分分布", "01_rating_distribution.png"),
-        ("评价人数分布", "02_votes_distribution.png"),
-    ]
-    c1, c2 = st.columns(2)
-    for i, (title, fn) in enumerate(figs):
-        p = FIG_DIR / fn
-        [c1, c2][i].image(str(p), caption=title) if p.exists() else None
-
-    st.markdown("### 评分与评价人数关系")
-    if (FIG_DIR / "03_rating_vs_votes.png").exists():
-        st.image(str(FIG_DIR / "03_rating_vs_votes.png"), use_container_width=True)
-
-    figs2 = [
-        ("评分等级", "05_rating_tiers.png"),
-        ("评价人数等级", "06_votes_tiers.png"),
-        ("相关性热力图", "07_correlation_heatmap.png"),
-        ("m参数分析", "08_m_parameter_analysis.png"),
-    ]
-    c1, c2, c3, c4 = st.columns(4)
-    for i, (title, fn) in enumerate(figs2):
-        p = FIG_DIR / fn
-        [c1, c2, c3, c4][i].image(str(p), caption=title) if p.exists() else None
-
-    if (FIG_DIR / "09_bayesian_top15.png").exists():
-        st.image(str(FIG_DIR / "09_bayesian_top15.png"), use_container_width=True)
 
 # ======================================================================
 #  出版社与作者
