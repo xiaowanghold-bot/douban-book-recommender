@@ -7,6 +7,8 @@ __pycache__/
 
 # Raw data (re-downloadable)
 data/raw/
+!data/raw/Books_detail.csv
+!data/raw/crawl_progress.txt
 
 # Models (regeneratable via src/recommendation.py)
 
