@@ -1,0 +1,30 @@
+﻿# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Raw data (re-downloadable)
+data/raw/
+
+# Models (regeneratable via src/recommendation.py)
+data/models/
+
+# Crawler logs
+crawler/crawl_log.txt
+crawler/crawl_error.txt
+crawler/test_*.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.egg-info/
+dist/
+build/
