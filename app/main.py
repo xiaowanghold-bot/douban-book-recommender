@@ -86,86 +86,167 @@ st.sidebar.caption("江南大学 · 大创项目")
 #  首页
 # ======================================================================
 if page == "🏠 首页":
-    st.title("📚 豆瓣图书评价与推荐系统")
-    st.markdown("### 基于豆瓣读书数据的智能图书评价与推荐平台")
+    import plotly.express as px
+    import plotly.graph_objects as go
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("收录图书", f"{len(df):,}")
-    with col2:
-        st.metric("平均评分", f"{df['rating'].mean():.1f}")
-    with col3:
-        st.metric("最高评分", f"{df['rating'].max():.1f}")
-    with col4:
-        st.metric("评价过万图书", f"{(df['votes']>=10000).sum():,}")
+    # ====== Hero Banner ======
+    st.markdown("""
+    <div style="text-align:center; padding:20px 0 10px 0;">
+        <h1 style="font-size:2.8em; margin-bottom:5px;">📚 豆瓣图书评价与推荐系统</h1>
+        <p style="font-size:1.2em; color:#888; margin-bottom:25px;">
+            基于 28 万豆瓣读书数据的智能图书分析平台
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ====== Stats Cards ======
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("📕 收录图书", f"{len(df):,}", delta="288K 原始")
+    with c2:
+        st.metric("⭐ 平均评分", f"{df['rating'].mean():.1f}", delta=f"最高 {df['rating'].max():.1f}")
+    with c3:
+        st.metric("👥 评价过万", f"{(df['votes']>=10000).sum():,}", delta=f"{(df['votes']>=1000).sum():,} 过千")
+    with c4:
+        st.metric("🏢 出版社", "221", delta="878 位作者")
+    with c5:
+        st.metric("📈 推荐引擎", "163K", delta="30 近邻/本")
+
+    st.markdown("---")
+
+    # ====== Quick Actions Row ======
+    st.markdown("### ✨ 快速体验")
+    qc1, qc2, qc3, qc4 = st.columns(4)
+
+    with qc1:
+        if st.button("🎲 随机推荐一本", use_container_width=True, type="primary"):
+            sample = df[df["votes"] >= 100].sample(1).iloc[0]
+            st.success(f"为你推荐：**{sample['title']}**")
+            st.caption(f"⭐ {sample['rating']:.1f} 分 | 💬 {int(sample['votes']):,} 人评价 | BS: {sample['bayesian_score']:.4f}")
+
+    with qc2:
+        if st.button("🔥 今日热门推荐", use_container_width=True):
+            hot = df[df["votes"] >= 500].nlargest(1, "bayesian_score").iloc[0]
+            st.success(f"今日热门：**{hot['title']}**")
+            st.caption(f"⭐ {hot['rating']:.1f} 分 | 💬 {int(hot['votes']):,} 人评价 | BS: {hot['bayesian_score']:.4f}")
+
+    with qc3:
+        if st.button("💰 高性价比好书", use_container_width=True):
+            try:
+                pd_price = load_price_data()
+                if pd_price is not None:
+                    best = pd_price[(pd_price["Rating"] >= 9) & (pd_price["price_num"] <= 30)]
+                    if len(best) > 0:
+                        b = best.sample(1).iloc[0]
+                        st.success(f"性价比之选：**{b['Title']}**")
+                        st.caption(f"⭐ {b['Rating']:.1f} 分 | 💰 {b['price_num']:.1f} 元 | {b.get('author','')[:15]}")
+            except:
+                pass
+
+    with qc4:
+        if st.button("🔮 预测图书评分", use_container_width=True):
+            st.info("请在左侧导航栏点击 **[评分预测]** 体验")
 
     st.markdown("---")
 
-    st.markdown("### 🎯 项目功能总览")
-    col_a, col_b, col_c = st.columns(3)
+    # ====== Interactive Charts ======
+    st.markdown("### 📊 数据一览")
+    tab1, tab2, tab3 = st.tabs(["📊 评分分布", "🏆 贝叶斯排行", "💰 价格分布"])
 
-    with col_a:
-        st.markdown("""
-        **📊 数据洞察**
-        - 174,244 本图书评分分布
-        - 评价人数对数分布
-        - 相关性热力图
-        """)
-    with col_b:
-        st.markdown("""
-        **🏆 贝叶斯排名**
-        - 消除评价人数偏差
-        - 小众高质图书上榜
-        - m 参数优化分析
-        """)
-    with col_c:
-        st.markdown("""
-        **🔍 智能推荐**
-        - 字符级 N-gram 相似度
-        - TF-IDF + 余弦匹配
-        - 混合推荐策略
-        """)
+    with tab1:
+        # Interactive rating distribution
+        fig = px.histogram(
+            df, x="rating", nbins=40,
+            title="图书评分分布（交互式）",
+            color_discrete_sequence=["#636EFA"],
+            labels={"rating": "豆瓣评分", "count": "图书数量"},
+        )
+        fig.update_layout(bargap=0.05, height=350, margin=dict(t=40, b=20))
+        fig.add_vline(x=df["rating"].mean(), line_dash="dash", line_color="red",
+                      annotation_text=f"均值 {df['rating'].mean():.1f}")
+        st.plotly_chart(fig, use_container_width=True)
 
-    col_d, col_e, col_f = st.columns(3)
-    with col_d:
-        st.markdown("""
-        **🏢 出版社/作者**
-        - 221 家出版社排名
-        - 878 位作者影响力
-        - 二维评价矩阵
-        """)
-    with col_e:
-        st.markdown("""
-        **🔮 评分预测**
-        - RandomForest 回归
-        - 7 维特征预测
-        - MAE = 0.40
-        """)
-    with col_f:
-        st.markdown("""
-        **💡 更多发现**
-        - 书名词云
-        - 价格分析
-        - 高性价比书单
-        """)
+    with tab2:
+        top50 = df[df["votes"] >= 50].nlargest(50, "bayesian_score")
+        fig = px.bar(
+            top50.iloc[::-1], x="bayesian_score", y="title",
+            orientation="h",
+            title="贝叶斯加权 Top 50（悬停查看详情）",
+            color="bayesian_score", color_continuous_scale="YlOrRd",
+            hover_data={"rating": True, "votes": True, "bayesian_score": ":.4f"},
+        )
+        fig.update_layout(height=700, margin=dict(t=40, b=20), yaxis=dict(tickfont=dict(size=10)))
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("### 🔥 高分图书速览")
-    top_books = df.nlargest(8, "bayesian_score")[["title", "rating", "votes", "bayesian_score"]]
-    cols = st.columns(4)
-    for i, (_, row) in enumerate(top_books.iterrows()):
-        with cols[i % 4]:
-            score = row["bayesian_score"]
-            color = "🟢" if score > 9.5 else "🟡" if score > 9.0 else "🟠"
-            st.metric(
-                label=f"{color} {str(row['title'])[:16]}",
-                value=f"{row['rating']:.1f} 分",
-                delta=f"{int(row['votes']):,} 人评价",
+    with tab3:
+        pd_price = load_price_data()
+        if pd_price is not None:
+            fig = px.histogram(
+                pd_price[pd_price["price_num"] < 200],
+                x="price_num", nbins=50,
+                title="图书价格分布（<200元）",
+                color_discrete_sequence=["#00CC96"],
+                labels={"price_num": "价格 (元)", "count": "图书数量"},
             )
+            fig.update_layout(bargap=0.05, height=350, margin=dict(t=40, b=20))
+            fig.add_vline(x=pd_price["price_num"].median(), line_dash="dash", line_color="red",
+                          annotation_text=f"中位数 {pd_price['price_num'].median():.1f}元")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("价格数据加载中...")
 
-# ======================================================================
-#  排行榜
-# ======================================================================
+    st.markdown("---")
+
+    # ====== Featured Books Grid ======
+    st.markdown("### 🌟 精选高分图书")
+    top12 = df[df["votes"] >= 500].nlargest(12, "bayesian_score")
+
+    rows = [st.columns(4) for _ in range(3)]
+    for i, (_, book) in enumerate(top12.iterrows()):
+        row_idx = i // 4
+        col_idx = i % 4
+        with rows[row_idx][col_idx]:
+            score = book["bayesian_score"]
+            emoji = "🟢" if score > 9.5 else "🟡" if score > 9.0 else "🟠"
+            st.markdown(f"""
+            <div style="border:1px solid #ddd; border-radius:10px; padding:12px; margin:5px 0; text-align:center;">
+                <div style="font-size:2em;">{emoji}</div>
+                <div style="font-weight:bold; font-size:1.05em; margin:5px 0;">{str(book['title'])[:18]}</div>
+                <div style="color:#f39c12; font-size:1.1em;">{'★' * int(book['rating']/2)}{'☆' * (5 - int(book['rating']/2))}</div>
+                <div style="font-size:0.85em; color:#888;">{book['rating']:.1f} 分 | {int(book['votes']):,} 人</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ====== Feature Navigation Cards ======
+    st.markdown("### 🚀 探索更多功能")
+    fc1, fc2, fc3, fc4 = st.columns(4)
+
+    card_style = """
+    <div style="border:1px solid #e0e0e0; border-radius:12px; padding:18px; text-align:center; height:160px;
+                background:linear-gradient(135deg, {color1}, {color2}); color:white; cursor:pointer;">
+        <div style="font-size:2.5em;">{icon}</div>
+        <div style="font-weight:bold; font-size:1.1em; margin-top:8px;">{title}</div>
+        <div style="font-size:0.8em; opacity:0.9; margin-top:5px;">{desc}</div>
+    </div>
+    """
+
+    cards = [
+        ("🏆", "贝叶斯排行榜", "科学的图书评分排名", "#667eea", "#764ba2"),
+        ("🔍", "智能搜书推荐", "基于内容的相似图书", "#f093fb", "#f5576c"),
+        ("🏢", "出版社与作者", "221家出版社 + 878位作者", "#4facfe", "#00f2fe"),
+        ("🔮", "评分预测", "RandomForest 回归模型", "#43e97b", "#38f9d7"),
+    ]
+
+    for idx, (icon, title, desc, c1, c2) in enumerate(cards):
+        with [fc1, fc2, fc3, fc4][idx]:
+            st.markdown(card_style.format(icon=icon, title=title, desc=desc, color1=c1, color2=c2),
+                        unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.caption("📧 江南大学 · 大学生创新训练计划项目 | 数据来源：豆瓣读书公开数据集 | 共计 288,824 本图书")
+
 elif page == "🏆 排行榜":
     st.title("🏆 贝叶斯加权评分排行榜")
     st.markdown("*基于贝叶斯平均算法，平衡评分高低与评价人数*")
