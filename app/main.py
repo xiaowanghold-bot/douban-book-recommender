@@ -146,7 +146,13 @@ def get_detail_info(book_id):
 def get_desc(book_id):
     return descriptions.get(str(int(book_id)), "")
 
+# 已验证封面集合（页面爬取，100%准确）
+VERIFIED_COVERS = {1007305,10608468,1068337,11530078,1211572,1221512,1221514,1258136,1358243,1448820,1467519,1542939,1608298,1668197,1774227,1844794,1950809,2032898,25709685,25757313,25898626,25907864,25914783,26197294,26304954,26423502,26435630,26912767,27154246,3048059,3162991,4201317,4759840,6435891,10608472,10608473,1195905,1236999,1400833,1621418,1625657,25918941,26388289,26389897,26469245}
+
 def get_cover(book_id):
+    """获取封面，仅返回已验证的准确封面"""
+    if int(book_id) not in VERIFIED_COVERS:
+        return None
     fname = cover_map.get(str(int(book_id)), "")
     if fname:
         full = COVER_DIR / fname
@@ -157,7 +163,6 @@ def get_cover(book_id):
         if f.exists():
             return str(f)
     return None
-
 # ========== 深色模式 ==========
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
@@ -386,12 +391,13 @@ if page == "🏠 首页":
             highlight = 'border: 3px solid #667eea;' if is_sel else ''
             
             img_b64 = ""
-            for ext in ["jpg", "png", "webp"]:
-                p = COVER_DIR / "{0}.{1}".format(bid, ext)
-                if p.exists():
-                    with open(p, "rb") as f:
-                        img_b64 = base64.b64encode(f.read()).decode()
-                    break
+            if int(bid) in VERIFIED_COVERS:
+                for ext in ["jpg", "png", "webp"]:
+                    p = COVER_DIR / "{0}.{1}".format(bid, ext)
+                    if p.exists():
+                        with open(p, "rb") as f:
+                            img_b64 = base64.b64encode(f.read()).decode()
+                        break
             
             if img_b64:
                 img_html = '<img src="data:image/jpeg;base64,{0}" class="hc-img">'.format(img_b64)
