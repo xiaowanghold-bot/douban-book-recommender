@@ -340,10 +340,21 @@ if page == "🏠 首页":
         extra = df[~df["id"].isin(cover_ids_in_dir)].nlargest(24 - len(df_with_covers), "bayesian_score")
         df_with_covers = pd.concat([df_with_covers, extra])
     top_cover_books = df_with_covers.nlargest(60, "bayesian_score")
-    # 去重同书名，保留最高分
-    top_cover_books = top_cover_books.drop_duplicates(subset="title", keep="first")
-    top_cover_books = top_cover_books.head(24)
-
+    # 扩大选池 + 去重同书名 + 封面质量过滤(>12KB防错图)
+    # 优先原版页面爬取封面(45张已验证)+CDN优质封面(>12KB)
+    _orig_covers = {1007305,10608468,1068337,11530078,1211572,1221512,1221514,1258136,1358243,1448820,1467519,1542939,1608298,1668197,1774227,1844794,1950809,2032898,25709685,25757313,25898626,25907864,25914783,26197294,26304954,26423502,26435630,26912767,27154246,3048059,3162991,4201317,4759840,6435891,10608472,10608473,1195905,1236999,1400833,1621418,1625657,25918941,26388289,26389897,26469245}
+    _pool = df_with_covers.nlargest(200, "bayesian_score")
+    _pool = _pool.drop_duplicates(subset="title", keep="first")
+    import os as _os_qf
+    def _cover_ok(bid):
+        p = COVER_DIR / "{}.jpg".format(int(bid))
+        return p.exists() and p.stat().st_size > 12000
+    _verified = _pool[_pool["id"].isin(_orig_covers) & _pool["id"].apply(_cover_ok)]
+    _cdn_ok = _pool[~_pool["id"].isin(_orig_covers) & _pool["id"].apply(_cover_ok)]
+    top_cover_books = pd.concat([_verified, _cdn_ok]).head(24)
+    if len(top_cover_books) < 24:
+        _fallback = _pool[~_pool["id"].isin(top_cover_books["id"])].head(24 - len(top_cover_books))
+        top_cover_books = pd.concat([top_cover_books, _fallback])
     # Row-by-row: cards + buttons interleaved
     if "home_detail_bid" not in st.session_state:
         st.session_state.home_detail_bid = None
