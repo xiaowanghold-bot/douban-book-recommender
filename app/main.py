@@ -339,7 +339,10 @@ if page == "🏠 首页":
         # Supplement with top books even without covers
         extra = df[~df["id"].isin(cover_ids_in_dir)].nlargest(24 - len(df_with_covers), "bayesian_score")
         df_with_covers = pd.concat([df_with_covers, extra])
-    top_cover_books = df_with_covers.nlargest(24, "bayesian_score")
+    top_cover_books = df_with_covers.nlargest(60, "bayesian_score")
+    # 去重同书名，保留最高分
+    top_cover_books = top_cover_books.drop_duplicates(subset="title", keep="first")
+    top_cover_books = top_cover_books.head(24)
 
     # Row-by-row: cards + buttons interleaved
     if "home_detail_bid" not in st.session_state:
