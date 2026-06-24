@@ -1,0 +1,5 @@
+Total books: 5356
+Have descriptions: 1840
+Need descriptions: 3522
+Douban accessible! Starting crawl...
+0/500 processed, descs: 1840 (+0)
