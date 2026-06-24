@@ -798,7 +798,6 @@ elif page == "🏷️ 标签浏览":
             st.metric("标签总数", len(tags_df))
             top_tag = tags_df.iloc[0]
             st.metric("最大标签", "{0} ({1}本)".format(top_tag["tag_name"], int(top_tag["book_count"])))
-
             categories = ["小说", "文学", "历史", "哲学", "科学", "艺术", "漫画", "推理",
                          "科幻", "爱情", "武侠", "心理", "经济", "政治", "散文",
                          "诗歌", "传记", "旅行", "美食", "设计", "教育", "儿童", "全部"]
@@ -809,85 +808,92 @@ elif page == "🏷️ 标签浏览":
                 filtered = tags_df[tags_df["tag_name"].str.contains(selected_cat, na=False)]
             else:
                 filtered = tags_df.head(80)
-
             st.markdown("### 共 {0} 个标签".format(len(filtered)))
             st.caption("💡 点击标签查看相关图书")
 
             if "selected_tag" not in st.session_state:
                 st.session_state.selected_tag = None
 
-            chips_per_row = 6
-            for row_start in range(0, min(len(filtered), 60), chips_per_row):
-                cols = st.columns(chips_per_row)
-                for ci in range(chips_per_row):
-                    idx = row_start + ci
-                    if idx < len(filtered):
-                        tag = filtered.iloc[idx]
-                        cnt = tag["book_count"]
-                        if cnt > 100: bg = "#e74c3c"
-                        elif cnt > 50: bg = "#e67e22"
-                        elif cnt > 20: bg = "#3498db"
-                        else: bg = "#95a5a6"
-                        with cols[ci]:
+            # 稳定的标签 chips 容器
+            tag_container = st.container()
+            with tag_container:
+                chips_per_row = 6
+                for row_start in range(0, min(len(filtered), 60), chips_per_row):
+                    cols = st.columns(chips_per_row)
+                    for ci in range(chips_per_row):
+                        idx = row_start + ci
+                        if idx < len(filtered):
+                            tag = filtered.iloc[idx]
+                            cnt = tag["book_count"]
                             tag_name = tag["tag_name"]
-                            if st.button("{0}\n({1}本)".format(tag_name, int(cnt)), key="tagbtn_{0}".format(idx),
-                                        help="点击查看{0}相关图书".format(tag_name), use_container_width=True):
-                                st.session_state.selected_tag = tag_name
-                                st.rerun()
+                            with cols[ci]:
+                                def _on_tag_click(tn=tag_name):
+                                    st.session_state.selected_tag = tn
+                                    st.session_state.pop("selected_book_id", None)
+                                st.button("{0} ({1})".format(tag_name[:6], int(cnt)),
+                                          key="tgchip_{0}".format(idx),
+                                          help="点击查看{0}相关图书".format(tag_name),
+                                          use_container_width=True,
+                                          on_click=_on_tag_click)
 
-            if st.session_state.selected_tag:
+        # ====== 图书展示区（独立于 columns，避免 DOM 变化） ======
+        if st.session_state.selected_tag:
+            st.markdown("---")
+            st.markdown("### 📚 「{0}」相关图书".format(st.session_state.selected_tag))
+            tag_kw = st.session_state.selected_tag
+            tag_matches = df[df["title"].str.contains(tag_kw, na=False, case=False)]
+            if len(tag_matches) < 6:
+                import hashlib
+                seed_val = int(hashlib.md5(tag_kw.encode()).hexdigest()[:8], 16)
+                pool = df.nlargest(200, "bayesian_score")
+                tag_books = pool.sample(n=min(30, len(pool)), random_state=seed_val % 100000)
+                st.caption("📌 该标签无直接书目数据，展示探索推荐（{0}本）".format(len(tag_books)))
+            else:
+                tag_books = tag_matches.nlargest(30, "bayesian_score")
+                st.caption("✅ 书名匹配 {0} 本".format(len(tag_books)))
+
+            # 稳定6列图书网格
+            tag_cols = st.columns(6)
+            for bi, (_, tb) in enumerate(tag_books.iterrows()):
+                ci = bi % 6
+                with tag_cols[ci]:
+                    cover = get_cover(tb["id"])
+                    if cover:
+                        st.image(cover, width=90)
+                    st.caption("{0} ⭐{1:.1f}".format(str(tb["title"])[:16], tb["rating"]))
+                    def _on_book_click(bid=int(tb["id"]), btitle=tb["title"], brating=tb["rating"], bvotes=tb["votes"]):
+                        st.session_state.selected_book_id = bid
+                        st.session_state.selected_book_title = btitle
+                        st.session_state.selected_book_rating = brating
+                        st.session_state.selected_book_votes = int(bvotes)
+                    st.button("📖", key="tgbtn_{0}".format(tb["id"]), help="查看详情",
+                              on_click=_on_book_click)
+
+            # 图书详情面板
+            if "selected_book_id" in st.session_state and st.session_state.selected_book_id:
                 st.markdown("---")
-                st.markdown("### 📚 「{0}」相关图书".format(st.session_state.selected_tag))
-                tag_kw = st.session_state.selected_tag
-                tag_matches = df[df["title"].str.contains(tag_kw, na=False, case=False)]
-                if len(tag_matches) < 6:
-                    import hashlib
-                    seed_val = int(hashlib.md5(tag_kw.encode()).hexdigest()[:8], 16)
-                    pool = df.nlargest(200, "bayesian_score")
-                    tag_books = pool.sample(n=min(30, len(pool)), random_state=seed_val % 100000)
-                    st.caption("📌 该标签无直接书目数据，展示探索推荐（{0}本）".format(len(tag_books)))
-                else:
-                    tag_books = tag_matches.nlargest(30, "bayesian_score")
-                    st.caption("✅ 书名匹配 {0} 本".format(len(tag_books)))
-                tag_cols = st.columns(6)
-                for bi, (_, tb) in enumerate(tag_books.iterrows()):
-                    ci = bi % 6
-                    with tag_cols[ci]:
-                        cover = get_cover(tb["id"])
-                        if cover:
-                            st.image(cover, width=90)
-                        st.caption("{0} ⭐{1:.1f}".format(str(tb["title"])[:16], tb["rating"]))
-                        if st.button("📖", key="tg_{0}".format(tb["id"]), help="查看详情"):
-                            st.session_state.selected_book_id = int(tb["id"])
-                            st.session_state.selected_book_title = tb["title"]
-                            st.session_state.selected_book_rating = tb["rating"]
-                            st.session_state.selected_book_votes = tb["votes"]
-                            st.rerun()
-                if "selected_book_id" in st.session_state and st.session_state.selected_book_id:
-                    st.markdown("---")
-                    bid2 = st.session_state.selected_book_id
-                    info2 = get_detail_info(bid2)
-                    desc2 = get_desc(bid2)
-                    cov2 = get_cover(bid2)
-                    dc1, dc2 = st.columns([1,3])
-                    with dc1:
-                        if cov2: st.image(cov2, width=150)
-                    with dc2:
-                        st.markdown("**{0}**".format(st.session_state.get("selected_book_title","")))
-                        st.caption("⭐{0:.1f} | 👥{1:,}".format(
-                            st.session_state.get("selected_book_rating",0),
-                            int(st.session_state.get("selected_book_votes",0))))
-                        for k in ["author","publisher","pub_year","price","isbn"]:
-                            if info2.get(k) and info2[k] != "nan":
-                                st.caption("{0}: {1}".format(k, info2[k]))
-                    if desc2: st.markdown("> {0}".format(desc2[:300]))
-                    if st.button("❌ 关闭", key="close_td"):
-                        st.session_state.selected_book_id = None
-                        st.rerun()
-                if st.button("❌ 关闭标签结果", key="close_tag"):
-                    st.session_state.selected_tag = None
-                    st.session_state.selected_book_id = None
+                bid2 = st.session_state.selected_book_id
+                info2 = get_detail_info(bid2)
+                desc2 = get_desc(bid2)
+                cov2 = get_cover(bid2)
+                dc1, dc2 = st.columns([1,3])
+                with dc1:
+                    if cov2: st.image(cov2, width=120)
+                with dc2:
+                    st.markdown("**{0}**".format(st.session_state.get("selected_book_title","")))
+                    st.caption("⭐{0:.1f} | {1:,}人".format(st.session_state.get("selected_book_rating",0), int(st.session_state.get("selected_book_votes",0))))
+                    for k in ["author","publisher","pub_year","price","isbn"]:
+                        if info2.get(k) and info2[k] != "nan":
+                            st.caption("{0}: {1}".format(k, info2[k]))
+                if desc2: st.markdown("> {0}".format(desc2[:300]))
+                if st.button("❌ 关闭详情", key="close_td_tag"):
+                    st.session_state.pop("selected_book_id", None)
                     st.rerun()
+
+            if st.button("❌ 关闭标签结果", key="close_tag"):
+                st.session_state.selected_tag = None
+                st.session_state.pop("selected_book_id", None)
+                st.rerun()
 
         st.markdown("---")
         st.markdown("### 📊 热门标签 Top 30")
@@ -901,9 +907,6 @@ elif page == "🏷️ 标签浏览":
     except Exception as e:
         st.info("标签数据加载中...")
 
-# ======================================================================
-#  关于项目
-# ======================================================================
 elif page == "📋 关于项目":
     st.title("📋 关于项目")
     st.markdown("""
