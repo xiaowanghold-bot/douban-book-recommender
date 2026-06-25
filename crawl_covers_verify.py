@@ -24,7 +24,8 @@ batch_targets = targets[:BATCH]
 print("This batch: " + str(len(batch_targets)))
 sys.stdout.flush()
 
-# Use a Session for cookies
+CDN_NODES = ["img1", "img2", "img3", "img9"]
+
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -35,6 +36,22 @@ session.headers.update({
 new_cnt = 0
 errors = 0
 no_cover = 0
+
+def try_download_image(session, cover_url, referer):
+    """Try downloading from multiple CDN nodes"""
+    for node in CDN_NODES:
+        try:
+            url = re.sub(r'img\d+', node, cover_url)
+            session.headers["Referer"] = referer
+            r = session.get(url, timeout=20)
+            if r.status_code == 200 and len(r.content) > 5000:
+                # Verify it's actually an image
+                ct = r.headers.get("content-type", "")
+                if "image" in ct or len(r.content) > 10000:
+                    return r.content, url
+        except:
+            continue
+    return None, None
 
 for i, bid_str in enumerate(batch_targets):
     bid = int(bid_str)
@@ -65,25 +82,21 @@ for i, bid_str in enumerate(batch_targets):
             time.sleep(random.uniform(0.5, 1.0))
             continue
 
-        # Download with Referer from book page
-        session.headers["Referer"] = url
-        img_r = session.get(cover_url, timeout=20)
-        if img_r.status_code == 200 and len(img_r.content) > 5000:
+        # Try multiple CDN nodes
+        img_data, final_url = try_download_image(session, cover_url, url)
+        if img_data:
             ext = "jpg"
-            if ".png" in cover_url:
+            if ".png" in final_url:
                 ext = "png"
-            elif ".webp" in cover_url:
+            elif ".webp" in final_url:
                 ext = "webp"
             fname = str(bid) + "." + ext
             fpath = os.path.join(COVER_DIR, fname)
             with open(fpath, "wb") as f:
-                f.write(img_r.content)
+                f.write(img_data)
             covers[bid_str] = fname
             verified.add(bid)
             new_cnt += 1
-        elif img_r.status_code != 200:
-            if errors <= 5:
-                print("  [" + str(bid) + "] Image HTTP " + str(img_r.status_code))
 
     except KeyboardInterrupt:
         print("\nInterrupted at " + str(i) + "/" + str(len(batch_targets)))
