@@ -127,6 +127,7 @@ def load_cover_map():
     return {}
 
 rec = load_recommender()
+df = load_scored_data()
 
 # ===== 流派搜索索引 =====
 @st.cache_resource
@@ -134,7 +135,6 @@ def load_genre_index(_df):
     return build_genre_search_index(_df, str(DATA_DIR / "processed" / "book_descriptions.json"))
 
 genre_text_index = load_genre_index(df)
-df = load_scored_data()
 detail_df = load_detail_data()
 descriptions = load_descriptions()
 cover_map = load_cover_map()
