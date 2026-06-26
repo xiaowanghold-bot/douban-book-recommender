@@ -217,6 +217,15 @@ class ColdStartPredictor:
                 "titles": self.titles,
                 "metrics": self.metrics,
                 "stats_cache": self._stats_cache,
+                "book_meta": {
+                    int(row.ID): {
+                        "title": str(row.Title),
+                        "rating": float(row.Rating),
+                        "author": str(row.author),
+                        "publisher": str(row.publisher),
+                    }
+                    for _, row in self.df.iterrows()
+                } if self.df is not None else {},
             }, f)
         print(f"  [Saved] {path}")
         return self
@@ -240,6 +249,7 @@ class ColdStartPredictor:
         predictor.titles = data["titles"]
         predictor.metrics = data["metrics"]
         predictor._stats_cache = data["stats_cache"]
+        predictor._book_meta = data.get("book_meta", {})
         return predictor
 
     def predict(self, author, publisher, pub_year, pages, binding, is_translation, is_series, votes_estimate=1000):
@@ -289,22 +299,19 @@ class ColdStartPredictor:
         sims = cosine_similarity(X, self.feature_matrix)[0]
         top_indices = np.argsort(sims)[::-1][:5]
 
+        _meta = getattr(self, "_book_meta", {})
         similar_books = []
         for idx in top_indices:
+            bid = int(self.book_ids[idx])
+            info = _meta.get(bid, {})
             similar_books.append({
-                "id": int(self.book_ids[idx]),
-                "title": str(self.titles[idx]),
-                "rating": float(self.df["Rating"].iloc[idx]) if self.df is not None else None,
+                "id": bid,
+                "title": info.get("title", str(self.titles[idx])),
+                "rating": info.get("rating"),
+                "author": info.get("author", ""),
+                "publisher": info.get("publisher", ""),
                 "similarity": float(sims[idx]),
             })
-
-        if self.df is not None:
-            for sb in similar_books:
-                row = self.df[self.df["ID"] == sb["id"]]
-                if len(row) > 0:
-                    sb["rating"] = float(row["Rating"].iloc[0])
-                    sb["author"] = str(row["author"].iloc[0])
-                    sb["publisher"] = str(row["publisher"].iloc[0])
 
         return pred, lower, upper, X, similar_books
 
@@ -351,6 +358,8 @@ if __name__ == "__main__":
     print(f"  Predicted: {pred:.2f}  [{low:.2f} - {up:.2f}]")
     print(f"  Similar books:")
     for sb in similar:
-        print(f"    {sb['title'][:30]:<32s} {sb['rating']:.1f}分 sim={sb['similarity']:.3f}")
+        r = sb.get('rating')
+        rs = f"{r:.1f}" if r is not None else "?"
+        print(f"    {sb['title'][:30]:<32s} {rs}分 sim={sb['similarity']:.3f}")
 
     print("\n[Done]")

@@ -31,3 +31,11 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+*.log
+crawl_*.txt
+_debug.py
+_test_*.py
+_img_test*.py
+_dbg_*.py
+_t2.py
+__pycache__/
