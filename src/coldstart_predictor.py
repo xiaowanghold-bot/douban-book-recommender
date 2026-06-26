@@ -1,4 +1,4 @@
-﻿"""
+"""
 冷启动评分预测模块 (Cold-Start Rating Predictor)
 用于预测数据集中不存在的书籍的豆瓣评分
 
