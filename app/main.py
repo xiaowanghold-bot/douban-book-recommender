@@ -498,27 +498,111 @@ if page == "🏠 首页":
 # ======================================================================
 elif page == "🏆 排行榜":
     st.title("🏆 贝叶斯加权评分排行榜")
-    st.markdown("*基于贝叶斯平均算法，平衡评分高低与评价人数*")
+    st.markdown("*IMDb式贝叶斯平均算法 — 平衡评分高低与评价人数*")
 
-    c1, c2 = st.columns([1, 3])
+    c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        min_votes = st.slider("最少评价人数", 0, 10000, 50, 100)
-        top_n = st.slider("显示数量", 10, 100, 50, 10)
-    top = df[df["votes"] >= min_votes].nlargest(top_n, "bayesian_score")
-    disp = top[["title", "rating", "votes", "bayesian_score"]].copy()
-    disp.columns = ["书名", "评分", "评价人数", "贝叶斯评分"]
-    disp.index = range(1, len(disp) + 1)
-    c2.dataframe(
-        disp.style.format({"评分": "{:.1f}", "贝叶斯评分": "{:.4f}", "评价人数": "{:,}"})
-        .background_gradient(subset=["贝叶斯评分"], cmap="YlOrRd"),
-        use_container_width=True, height=600,
-    )
-    csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
-    st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
+        min_votes = st.slider("最少评价人数", 0, 10000, 50, 100, key="lb_min_votes")
+    with c2:
+        top_n = st.slider("显示数量", 10, 100, 50, 10, key="lb_top_n")
+    with c3:
+        st.caption("💡 贝叶斯评分 = (v/(v+m))×R + (m/(v+m))×C")
+        st.caption("C=全库均值 | m=中位数评价人数")
 
-# ======================================================================
-#  搜书推荐
-# ======================================================================
+    top = df[df["votes"] >= min_votes].nlargest(top_n, "bayesian_score")
+
+    tab1, tab2 = st.tabs(["📊 可视化排名", "📋 数据表格"])
+
+    with tab1:
+        import plotly.express as px
+        import plotly.graph_objects as go
+        import numpy as np
+
+        top_disp = top.head(20).copy()
+        top_disp["short_title"] = top_disp["title"].str[:20]
+        fig_bar = px.bar(
+            top_disp.iloc[::-1],
+            x="bayesian_score", y="short_title",
+            orientation="h",
+            title=f"贝叶斯加权评分 Top {min(20, len(top_disp))}（最少{min_votes}人评价）",
+            color="bayesian_score",
+            color_continuous_scale="RdYlGn",
+            text=top_disp["bayesian_score"].apply(lambda x: f"{x:.3f}")
+        )
+        fig_bar.update_traces(textposition="outside", textfont_size=11)
+        fig_bar.update_layout(
+            font_family="Microsoft YaHei",
+            height=500,
+            xaxis_title="贝叶斯评分", yaxis_title="",
+            coloraxis_showscale=False,
+            margin=dict(l=10, r=80, t=40, b=10)
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.markdown("---")
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            C = df["rating"].mean()
+            fig_hist = px.histogram(
+                df, x="rating", nbins=50,
+                title="全库评分分布与均值 C",
+                color_discrete_sequence=["#667eea"],
+                opacity=0.7
+            )
+            fig_hist.add_vline(x=C, line_dash="dash", line_color="red", line_width=2,
+                               annotation_text=f"C={C:.2f} (全局均值)")
+            fig_hist.update_layout(
+                font_family="Microsoft YaHei",
+                height=350,
+                xaxis_title="评分", yaxis_title="图书数量",
+                margin=dict(l=10, r=10, t=40, b=10)
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+        with col_b:
+            sample = df.sample(min(5000, len(df)), random_state=42)
+            fig_scatter = px.scatter(
+                sample, x="votes", y="rating",
+                title="评分 vs 评价人数（贝叶斯修正）",
+                color="bayesian_score" if "bayesian_score" in sample.columns else "rating",
+                color_continuous_scale="RdYlGn",
+                opacity=0.5, size_max=8,
+                log_x=True
+            )
+            top_sample = top.head(10)
+            for _, r in top_sample.iterrows():
+                fig_scatter.add_annotation(
+                    x=np.log10(r["votes"]), y=r["rating"],
+                    text=str(r["title"])[:8],
+                    showarrow=True, arrowhead=1, font_size=8
+                )
+            fig_scatter.update_layout(
+                font_family="Microsoft YaHei",
+                height=350,
+                xaxis_title="评价人数 (log)", yaxis_title="评分",
+                margin=dict(l=10, r=10, t=40, b=10)
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+        st.markdown("---")
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("全库均值 C", f"{C:.3f}")
+        sc2.metric("Top10 平均", f"{top.head(10)['rating'].mean():.1f}")
+        sc3.metric("Top10 评价中位数", f"{int(top.head(10)['votes'].median()):,}")
+        sc4.metric("符合条件图书", f"{len(top):,} 本")
+
+    with tab2:
+        disp = top[["title", "rating", "votes", "bayesian_score"]].copy()
+        disp.columns = ["书名", "评分", "评价人数", "贝叶斯评分"]
+        disp.index = range(1, len(disp) + 1)
+        st.dataframe(
+            disp.style.format({"评分": "{:.1f}", "贝叶斯评分": "{:.4f}", "评价人数": "{:,}"})
+            .background_gradient(subset=["贝叶斯评分"], cmap="YlOrRd"),
+            use_container_width=True, height=600,
+        )
+        csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
+        st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
 elif page == "🔍 搜书推荐":
     st.title("🔍 搜书 & 智能推荐")
 
