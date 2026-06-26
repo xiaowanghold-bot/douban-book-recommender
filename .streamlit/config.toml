@@ -1,6 +1,0 @@
-[general]
-email = ""
-
-[server]
-port = 8504
-headless = true

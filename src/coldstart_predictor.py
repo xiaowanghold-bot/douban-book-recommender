@@ -204,13 +204,16 @@ class ColdStartPredictor:
         return self
 
     def save(self):
-        """保存模型"""
-        path = MODEL_DIR / "coldstart_predictor.pkl"
-        with open(path, "wb") as f:
+        """???? (joblib for sklearn models, pickle for metadata)"""
+        import joblib
+        # sklearn models via joblib (better cross-version compatibility)
+        joblib.dump(self.model, MODEL_DIR / "coldstart_model.joblib")
+        joblib.dump(self.model_lower, MODEL_DIR / "coldstart_model_lower.joblib")
+        joblib.dump(self.model_upper, MODEL_DIR / "coldstart_model_upper.joblib")
+        # metadata via pickle
+        meta_path = MODEL_DIR / "coldstart_meta.pkl"
+        with open(meta_path, "wb") as f:
             pickle.dump({
-                "model": self.model,
-                "model_lower": self.model_lower,
-                "model_upper": self.model_upper,
                 "feature_names": self.feature_names,
                 "feature_matrix": self.feature_matrix,
                 "book_ids": self.book_ids,
@@ -227,22 +230,23 @@ class ColdStartPredictor:
                     for _, row in self.df.iterrows()
                 } if self.df is not None else {},
             }, f)
-        print(f"  [Saved] {path}")
+        print(f"  [Saved] {MODEL_DIR}")
         return self
 
     @staticmethod
     def load(path=None):
-        """加载模型"""
+        """???? (joblib for sklearn, pickle for metadata)"""
+        import joblib
         if path is None:
-            path = MODEL_DIR / "coldstart_predictor.pkl"
+            path = MODEL_DIR / "coldstart_meta.pkl"
         if not path.exists():
             return None
         with open(path, "rb") as f:
             data = pickle.load(f)
         predictor = ColdStartPredictor()
-        predictor.model = data["model"]
-        predictor.model_lower = data["model_lower"]
-        predictor.model_upper = data["model_upper"]
+        predictor.model = joblib.load(MODEL_DIR / "coldstart_model.joblib")
+        predictor.model_lower = joblib.load(MODEL_DIR / "coldstart_model_lower.joblib")
+        predictor.model_upper = joblib.load(MODEL_DIR / "coldstart_model_upper.joblib")
         predictor.feature_names = data["feature_names"]
         predictor.feature_matrix = data["feature_matrix"]
         predictor.book_ids = data["book_ids"]
