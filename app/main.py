@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from recommendation import BookRecommender
+from coldstart_page import show as show_coldstart
 
 st.set_page_config(
     page_title="豆瓣图书评价与推荐系统",
@@ -99,6 +100,11 @@ def load_predictor():
             return float(self.model.predict(X)[0])
     
     return PredictorWrapper(data)
+
+@st.cache_resource
+def load_coldstart_predictor():
+    from coldstart_predictor import ColdStartPredictor
+    return ColdStartPredictor.load()
 
 @st.cache_data
 def load_detail_data():
@@ -215,7 +221,7 @@ with st.sidebar:
     st.markdown("---")
     
     pages_list = ["🏠 首页", "🏆 排行榜", "🔍 搜书推荐",
-                   "🏢 出版社与作者", "🔮 评分预测", "💡 更多发现",
+                   "🏢 出版社与作者", "🔮 评分预测", "🧊 新书预测", "💡 更多发现",
                    "🏷️ 标签浏览", "📋 关于项目"]
     
     if "current_page" not in st.session_state:
@@ -789,6 +795,11 @@ elif page == "💡 更多发现":
 # ======================================================================
 #  标签浏览
 # ======================================================================
+
+elif page == "🧊 新书预测":
+    csp = load_coldstart_predictor()
+    show_coldstart(csp)
+
 elif page == "🏷️ 标签浏览":
     st.title("🏷️ 标签分类浏览")
     st.markdown("*基于 897 个豆瓣标签的图书主题分类*")
