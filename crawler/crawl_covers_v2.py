@@ -120,7 +120,7 @@ def crawl():
             save_progress(i)
             save_json(COVER_OUTPUT, covers)
             return
-        except Exception as e:
+        except Exception:
             consecutive_failures += 1
             time.sleep(0.5)
     save_progress(len(book_ids))

@@ -171,7 +171,7 @@ class BookDataCleaner:
             return self
         
         print("\n--- 数据合并 ---")
-        before = len(self.df)
+        _ = len(self.df)
         
         # 左连接：保留所有基础数据，补充详细信息
         detail_cols = ["id", "author", "publisher", "pub_year", "pub_year_value",

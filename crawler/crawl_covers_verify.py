@@ -2,9 +2,10 @@ import requests, re, time, random, json, os, sys
 from datetime import datetime
 from pathlib import Path
 
-COVER_DIR = "app/covers"
-COVER_FILE = "data/processed/book_covers.json"
-DESC_FILE = "data/processed/book_descriptions.json"
+ROOT = Path(__file__).resolve().parent.parent
+COVER_DIR = ROOT / "app" / "covers"
+COVER_FILE = ROOT / "data" / "processed" / "book_covers.json"
+DESC_FILE = ROOT / "data" / "processed" / "book_descriptions.json"
 VERIFIED_FILE = ROOT / "data" / "processed" / "verified_covers.json"
 
 COVER_DIR.mkdir(parents=True, exist_ok=True)

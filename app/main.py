@@ -656,8 +656,7 @@ elif page == "🔍 搜书推荐":
             for i, (_, m) in enumerate(results.iterrows()):
                 ci = i % 4
                 with match_cols[ci]:
-                    if cover:
-                        st.image(cover, width=110)
+                    render_cover(m["id"], cover_map, COVER_DIR, VERIFIED_COVERS, width=110)
                     btn_label = "{0} ⭐{1:.1f}".format(str(m["title"])[:22], m["rating"])
                     if st.button(btn_label, key="suggest_{0}".format(m["id"]), use_container_width=True,
                                  help="{0:,}人评价".format(int(m["votes"]))):

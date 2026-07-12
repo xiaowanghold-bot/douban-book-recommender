@@ -217,7 +217,7 @@ class PublisherAuthorAnalyzer:
         ax = axes[1]
         top15 = self.pub_stats.head(15).iloc[::-1]
         colors = plt.cm.YlOrRd(top15["pub_score"] / top15["pub_score"].max())
-        bars = ax.barh(range(len(top15)), top15["pub_score"], color=colors)
+        ax.barh(range(len(top15)), top15["pub_score"], color=colors)
         ax.set_yticks(range(len(top15)))
         ax.set_yticklabels([f"{n[:16]} ({int(c)}本)" for n, c in
                             zip(top15.index, top15["book_count"])], fontsize=9)

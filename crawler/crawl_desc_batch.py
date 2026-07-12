@@ -100,7 +100,7 @@ for i, bid_str in enumerate(needed):
     except requests.exceptions.Timeout:
         fail += 1
         time.sleep(2)
-    except Exception as e:
+    except Exception:
         fail += 1
         time.sleep(1)
 
