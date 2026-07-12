@@ -141,11 +141,21 @@ class BookRecommender:
         return self
 
     def _load_artifacts(self):
-        """加载已保存的模型"""
-        self.tfidf_matrix = load_npz(self.model_dir / "tfidf_matrix.npz")
-        with open(self.model_dir / "vectorizer.pkl", "rb") as f:
+        """加载已保存的模型，缺失时抛出明确错误。"""
+        required = {
+            "tfidf_matrix.npz": self.model_dir / "tfidf_matrix.npz",
+            "vectorizer.pkl": self.model_dir / "vectorizer.pkl",
+            "books_for_rec.csv": self.model_dir / "books_for_rec.csv",
+        }
+        for name, fp in required.items():
+            if not fp.exists():
+                raise FileNotFoundError(
+                    f"模型文件缺失：{name}。请先运行 src/recommendation.py 生成模型产物。"
+                )
+        self.tfidf_matrix = load_npz(required["tfidf_matrix.npz"])
+        with open(required["vectorizer.pkl"], "rb") as f:
             self.vectorizer = pickle.load(f)
-        books_path = self.model_dir / "books_for_rec.csv"
+        books_path = required["books_for_rec.csv"]
         if books_path.exists():
             self.df = pd.read_csv(books_path, encoding="utf-8-sig")
             for idx, book_id in enumerate(self.df["id"]):

@@ -32,16 +32,33 @@ COVER_MAP_FILE = DATA_DIR / "processed" / "book_covers.json"
 # ========== 缓存加载 ==========
 @st.cache_resource
 def load_recommender():
+    """加载推荐引擎，缺失模型文件时给出明确提示并停止。"""
+    models_dir = BASE_DIR / "data" / "models"
+    required = [
+        models_dir / "tfidf_matrix.npz",
+        models_dir / "nn_neighbors.npz",
+        models_dir / "vectorizer.pkl",
+        models_dir / "books_for_rec.csv",
+    ]
+    for f in required:
+        if not f.exists():
+            st.error(f"模型文件缺失：{f.name}。请先运行 src/recommendation.py 生成模型产物。")
+            st.stop()
     rec = BookRecommender()
     rec._load_artifacts()
-    nn = np.load(str(BASE_DIR / "data" / "models" / "nn_neighbors.npz"))
+    nn = np.load(str(models_dir / "nn_neighbors.npz"))
     rec.nn_distances = nn["distances"]
     rec.nn_indices = nn["indices"]
     return rec
 
 @st.cache_data
 def load_scored_data():
-    return pd.read_csv(BASE_DIR / "data" / "processed" / "books_scored.csv", encoding="utf-8-sig")
+    """加载评分数据，缺失时给出明确提示并停止。"""
+    p = BASE_DIR / "data" / "processed" / "books_scored.csv"
+    if not p.exists():
+        st.error("数据文件缺失：books_scored.csv。请先运行 src/scoring.py 生成评分数据。")
+        st.stop()
+    return pd.read_csv(p, encoding="utf-8-sig")
 
 @st.cache_data
 def load_price_data():
