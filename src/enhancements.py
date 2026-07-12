@@ -13,10 +13,11 @@ import re
 from pathlib import Path
 import pickle
 import warnings
+from pathlib import Path
 warnings.filterwarnings("ignore")
 
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
+from utils import setup_chinese_font, _CJK_FONT_CANDIDATES
+setup_chinese_font()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 FIG_DIR = Path(__file__).parent.parent / "reports" / "figures"
@@ -62,10 +63,11 @@ def generate_wordcloud():
         word_freq.pop(sw, None)
 
     # 生成词云
+    font_path = _CJK_FONT_CANDIDATES[1] if Path(_CJK_FONT_CANDIDATES[1]).exists() else (_CJK_FONT_CANDIDATES[0] if Path(_CJK_FONT_CANDIDATES[0]).exists() else None)
     wc = WordCloud(
         width=1200, height=600,
         background_color="white",
-        font_path="C:/Windows/Fonts/msyh.ttc",
+        font_path=font_path,
         max_words=150,
         max_font_size=120,
         min_font_size=14,
