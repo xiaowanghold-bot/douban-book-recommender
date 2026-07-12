@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from recommendation import BookRecommender
+from components import render_cover, render_book_detail, cover_to_base64
 from genre_search import build_genre_search_index, search_books_by_genre, GENRE_GROUPS
 from coldstart_page import show as show_coldstart
 
@@ -454,15 +455,11 @@ if page == "🏠 首页":
             book = sel_book.iloc[0]
             info = get_detail_info(bid)
             desc = get_desc(bid)
-            cover = get_cover(bid)
             st.markdown("---")
             st.markdown("### 📖 {0}".format(str(book["title"])))
             dc1, dc2 = st.columns([1, 3])
             with dc1:
-                if cover:
-                    st.image(cover, width=200)
-                else:
-                    st.markdown('<div style="width:200px;height:260px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-size:3em;">📕</div>', unsafe_allow_html=True)
+                render_cover(bid, cover_map, COVER_DIR, VERIFIED_COVERS, width=200)
             with dc2:
                 st.markdown("⭐ {0:.1f} / 10  |  👥 {1:,} 人评价".format(float(book["rating"]), int(book["votes"])))
                 st.markdown("🏅 贝叶斯评分: {0:.4f}".format(float(book.get("bayesian_score", 0))))
@@ -642,7 +639,6 @@ elif page == "🔍 搜书推荐":
             for i, (_, m) in enumerate(results.iterrows()):
                 ci = i % 4
                 with match_cols[ci]:
-                    cover = get_cover(m["id"])
                     if cover:
                         st.image(cover, width=110)
                     btn_label = "{0} ⭐{1:.1f}".format(str(m["title"])[:22], m["rating"])
@@ -663,11 +659,9 @@ elif page == "🔍 搜书推荐":
                 # Detail info
                 info = get_detail_info(bid)
                 desc = get_desc(bid)
-                cover = get_cover(bid)
                 dc1, dc2 = st.columns([1, 3])
                 with dc1:
-                    if cover:
-                        st.image(cover, width=200)
+                    render_cover(bid, cover_map, COVER_DIR, VERIFIED_COVERS, width=200)
                 with dc2:
                     st.markdown("⭐ {0:.1f} | 👥 {1:,}人评价".format(
                         st.session_state.get("selected_book_rating", 0),
@@ -955,11 +949,9 @@ elif page == "🏷️ 标签浏览":
                 bid2 = st.session_state.selected_book_id
                 info2 = get_detail_info(bid2)
                 desc2 = get_desc(bid2)
-                cov2 = get_cover(bid2)
                 dc1, dc2 = st.columns([1, 3])
                 with dc1:
-                    if cov2:
-                        st.image(cov2, width=120)
+                    render_cover(bid2, cover_map, COVER_DIR, VERIFIED_COVERS, width=120)
                 with dc2:
                     st.markdown(f"**{st.session_state.get('selected_book_title', '')}**")
                     st.caption(f"⭐{st.session_state.get('selected_book_rating', 0):.1f} | {int(st.session_state.get('selected_book_votes', 0)):,}人")
