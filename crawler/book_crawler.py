@@ -1,4 +1,4 @@
-﻿"""
+"""
 豆瓣图书详细信息爬虫
 基于已有的图书ID，爬取作者、出版社、价格、ISBN、页数等元数据
 """
@@ -8,14 +8,16 @@ import time
 import random
 import csv
 import os
+from pathlib import Path
 import sys
 from datetime import datetime
 
 # ========== 配置区 ==========
-DATA_DIR = r"C:\Users\33672\Documents\New project1\data"
-RAW_DATA = os.path.join(DATA_DIR, "raw", "Books_1.csv")
-OUTPUT_FILE = os.path.join(DATA_DIR, "raw", "Books_detail.csv")
-PROGRESS_FILE = os.path.join(DATA_DIR, "raw", "crawl_progress.txt")
+ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT / "data"
+RAW_DATA = DATA_DIR / "raw" / "Books_1.csv"
+OUTPUT_FILE = DATA_DIR / "raw" / "Books_detail.csv"
+PROGRESS_FILE = DATA_DIR / "raw" / "crawl_progress.txt"
 
 MIN_VOTES = 2000          # 最少评价人数
 START_INDEX = 0           # 从第几本开始（支持断点续爬）
