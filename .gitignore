@@ -39,3 +39,9 @@ _img_test*.py
 _dbg_*.py
 _t2.py
 __pycache__/
+
+# Streamlit local logs
+sl_*.txt
+
+# Streamlit secrets
+.streamlit/secrets.toml

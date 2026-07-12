@@ -1,3 +1,0 @@
-Already verified: 45
-Total targets: 1800
-This batch: 500
