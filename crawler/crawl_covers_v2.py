@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 import requests, re, time, os, random, json, sys
 from datetime import datetime
+from pathlib import Path
 import pandas as pd
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE, 'data')
-DETAIL_FILE = os.path.join(DATA_DIR, 'raw', 'Books_detail.csv')
-COVER_OUTPUT = os.path.join(DATA_DIR, 'processed', 'book_covers.json')
-COVER_DIR = os.path.join(BASE, 'app', 'covers')
-PROGRESS_FILE = os.path.join(DATA_DIR, 'raw', 'cover_crawl_progress.txt')
+ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT / "data"
+DETAIL_FILE = DATA_DIR / "raw" / "Books_detail.csv"
+COVER_OUTPUT = DATA_DIR / "processed" / "book_covers.json"
+COVER_DIR = ROOT / "app" / "covers"
+PROGRESS_FILE = DATA_DIR / "raw" / "cover_crawl_progress.txt"
 MAX_BOOKS = 3000
 MIN_IMAGE_SIZE = 3000
 
-os.makedirs(COVER_DIR, exist_ok=True)
+COVER_DIR.mkdir(parents=True, exist_ok=True)
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -27,11 +28,11 @@ def load_books():
     return success['ID'].astype(int).tolist()[:MAX_BOOKS]
 
 def load_progress():
-    if os.path.exists(PROGRESS_FILE):
+    if PROGRESS_FILE.exists():
         with open(PROGRESS_FILE, 'r', encoding='utf-8') as fp:
             return int(fp.read().strip())
-    old = os.path.join(DATA_DIR, 'raw', 'desc_crawl_progress.txt')
-    if os.path.exists(old):
+    old = DATA_DIR / "raw" / "desc_crawl_progress.txt"
+    if old.exists():
         with open(old, 'r', encoding='utf-8') as fp:
             return int(fp.read().strip())
     return 0
@@ -41,7 +42,7 @@ def save_progress(idx):
         fp.write(str(idx))
 
 def load_json(path):
-    if os.path.exists(path):
+    if Path(path).exists():
         with open(path, 'r', encoding='utf-8') as fp:
             return json.load(fp)
     return {}
@@ -93,7 +94,7 @@ def crawl():
             img_bytes, ext = download_cover_cdn(bid)
             if img_bytes:
                 fname = '{}.{}'.format(bid, ext)
-                fpath = os.path.join(COVER_DIR, fname)
+                fpath = COVER_DIR / fname
                 with open(fpath, 'wb') as fp:
                     fp.write(img_bytes)
                 covers[bid_str] = fname

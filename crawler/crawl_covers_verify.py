@@ -1,17 +1,18 @@
 import requests, re, time, random, json, os, sys
 from datetime import datetime
+from pathlib import Path
 
 COVER_DIR = "app/covers"
 COVER_FILE = "data/processed/book_covers.json"
 DESC_FILE = "data/processed/book_descriptions.json"
-VERIFIED_FILE = "data/processed/verified_covers.json"
+VERIFIED_FILE = ROOT / "data" / "processed" / "verified_covers.json"
 
-os.makedirs(COVER_DIR, exist_ok=True)
-covers = json.load(open(COVER_FILE, encoding="utf-8"))
-descs = json.load(open(DESC_FILE, encoding="utf-8"))
+COVER_DIR.mkdir(parents=True, exist_ok=True)
+covers = json.load(open(str(COVER_FILE), encoding="utf-8"))
+descs = json.load(open(str(DESC_FILE), encoding="utf-8"))
 
 if os.path.exists(VERIFIED_FILE):
-    verified = set(json.load(open(VERIFIED_FILE, encoding="utf-8")))
+    verified = set(json.load(open(str(VERIFIED_FILE), encoding="utf-8")))
 else:
     verified = set()
 print("Already verified: " + str(len(verified)))
@@ -91,7 +92,7 @@ for i, bid_str in enumerate(batch_targets):
             elif ".webp" in final_url:
                 ext = "webp"
             fname = str(bid) + "." + ext
-            fpath = os.path.join(COVER_DIR, fname)
+            fpath = COVER_DIR / fname
             with open(fpath, "wb") as f:
                 f.write(img_data)
             covers[bid_str] = fname
