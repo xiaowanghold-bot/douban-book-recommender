@@ -144,8 +144,29 @@ def load_cover_map():
             return json.load(f)
     return {}
 
+@st.cache_resource
+def load_tag_index():
+    """Build tag->book_ids inverted index from real Douban user tags."""
+    import json, pandas as pd
+    tag_file = DATA_DIR / "processed" / "book_tags.json"
+    tc_file = DATA_DIR / "processed" / "tag_counts.csv"
+    tag_to_ids = {}
+    top_tags = []
+    if tag_file.exists():
+        with open(tag_file, "r", encoding="utf-8") as f:
+            all_tags = json.load(f)
+        for book_id_str, tags in all_tags.items():
+            bid = int(book_id_str)
+            for t in tags:
+                tag_to_ids.setdefault(t, set()).add(bid)
+    if tc_file.exists():
+        tc = pd.read_csv(tc_file)
+        top_tags = tc.nlargest(30, "count")["tag"].tolist()
+    return tag_to_ids, top_tags
+
 rec = load_recommender()
 df = load_scored_data()
+tag_to_ids, top_tags_list = load_tag_index()
 
 # ===== 流派搜索索引 =====
 @st.cache_resource
@@ -905,7 +926,7 @@ elif page == "🧊 新书预测":
 
 elif page == "🏷️ 标签浏览":
     st.title("🏷️ 标签分类浏览")
-    st.markdown("*通过关键词匹配 + 评分排序的流派图书探索*")
+    st.markdown("*基于真实豆瓣用户标签 + 语义搜索的流派图书探索*")
 
     # ===== 流派分组标签页 =====
     group_names = list(GENRE_GROUPS.keys())
