@@ -26,6 +26,7 @@
 
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020): 288,824 本图书基础评分
 - IJCAI 跨域推荐数据集 (DTCDR/GA-DTCDR): 227,251 条书评, 95,872 本书, 19,021 个用户标签
+- `user_ratings.csv` 由 `src/integrate_ijcai.py` 从 Kaggle 原始数据集生成, 需自行下载原始数据后运行脚本
 - 481 个豆列 + 897 个标签
 
 ### 引用

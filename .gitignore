@@ -45,3 +45,6 @@ sl_*.txt
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# IJCAI generated (from Kaggle raw data, not redistributable)
+data/processed/user_ratings.csv
