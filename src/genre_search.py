@@ -59,8 +59,6 @@ def build_genre_search_index(df, desc_json_path="data/processed/book_description
     
     texts = {}
     for _, row in df.iterrows():
-        if row["id"] in existing_ids:
-            continue
         bid = str(int(row["id"]))
         title = str(row.get("title", ""))
         desc = descs.get(bid, "")
