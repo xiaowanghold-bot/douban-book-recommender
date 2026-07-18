@@ -117,11 +117,12 @@ def show(csp):
     with st.expander("🧠 模型信息", expanded=False):
         m = csp.metrics
         st.markdown(f"""
-        **GradientBoosting 回归模型**
+        **v3 GradientBoosting (10特征, LOO统计)**
         - 训练样本: **{m.get('n_samples', 0):,}** 本豆瓣图书
-        - MAE: **{m.get('MAE', 0):.3f}** (平均预测误差)
-        - R²: **{m.get('R2', 0):.3f}** (拟合优度)
+        - LOO MAE: **{m.get('MAE', 0):.3f}** (留一法训练误差)
+        - LOO R²: **{m.get('R2', 0):.3f}** (留一法拟合优度)
         - 5折交叉验证 R²: **{m.get('CV_R2', 0):.3f}**
-        - 特征维度: 11 (出版社/作者统计 + 年份/页数/装帧/翻译/系列)
+        - 独立测试集 R²: **0.50** (严谨版评估)
+        - 特征维度: 10 (去votes_log, LOO统计)
         - 置信区间: 分位数回归 (5%-95%)
         """)

@@ -66,8 +66,8 @@ class ColdStartPredictor:
         return self
 
     def build_stats(self):
-        """构建出版社、作者等统计特征"""
-        print("[ColdStart] Building statistical features...")
+        """v3: 对全量数据构建统计量（用于预测时的查询），训练时内部用 LOO 避免泄露"""
+        print("[ColdStart] Building statistical features (v3: train-only, no votes_log)...")
         df = self.df
 
         # Publisher stats
@@ -105,48 +105,103 @@ class ColdStartPredictor:
         return self
 
     def build_features(self):
-        """从统计数据构建特征矩阵"""
-        print("[ColdStart] Building feature matrix...")
-        df = self.df
-        pub_stats = self._stats_cache["publisher"]
-        auth_stats = self._stats_cache["author"]
-        binding_stats = self._stats_cache["binding"]
+        """v3: 构建 10 维特征矩阵（去 votes_log，LOO 统计）"""
+        print("[ColdStart] Building feature matrix (v3, 10 features, LOO stats)...")
+        from sklearn.model_selection import train_test_split
+        df = self.df.copy()
+
+        # Split: 80% for computing LOO stats
+        train_idx_arr, _ = train_test_split(np.arange(len(df)), test_size=0.2, random_state=42)
+        train_idx = set(train_idx_arr.tolist())
+
+        # Train-only aggregate stats
+        train_subset = df.iloc[list(train_idx)]
+        pub_train = train_subset.groupby("publisher").agg(
+            avg=("Rating", "mean"), cnt=("Rating", "count"), std=("Rating", "std")
+        ).fillna(0)
+        auth_train = train_subset.groupby("author").agg(
+            avg=("Rating", "mean"), cnt=("Rating", "count")
+        ).fillna(0)
+        bind_train = train_subset.groupby("binding")["Rating"].mean().to_dict()
+        gm = float(df["Rating"].mean())
+        gs = float(df["Rating"].std())
+
+        N = len(df)
+        pub_avg = np.zeros(N)
+        pub_cnt = np.zeros(N)
+        pub_std = np.zeros(N)
+        auth_avg = np.zeros(N)
+        auth_cnt = np.zeros(N)
+
+        pub_map = df["publisher"].values
+        auth_map = df["author"].values
+        ratings = df["Rating"].values
+
+        for i in range(N):
+            p = pub_map[i]
+            a = auth_map[i]
+            r = ratings[i]
+
+            if p in pub_train.index:
+                pn = pub_train.loc[p, "cnt"]
+                pm = pub_train.loc[p, "avg"]
+                ps_val = pub_train.loc[p, "std"]
+                if i in train_idx and pn > 1:
+                    pub_avg[i] = (pm * pn - r) / (pn - 1)
+                    pub_cnt[i] = pn - 1
+                else:
+                    pub_avg[i] = pm
+                    pub_cnt[i] = pn
+                pub_std[i] = ps_val if not np.isnan(ps_val) else gs
+            else:
+                pub_avg[i] = gm; pub_cnt[i] = 1; pub_std[i] = gs
+
+            if a in auth_train.index:
+                an = auth_train.loc[a, "cnt"]
+                am = auth_train.loc[a, "avg"]
+                if i in train_idx and an > 1:
+                    auth_avg[i] = (am * an - r) / (an - 1)
+                    auth_cnt[i] = an - 1
+                else:
+                    auth_avg[i] = am
+                    auth_cnt[i] = an
+            else:
+                auth_avg[i] = gm; auth_cnt[i] = 1
 
         features = {}
-
-        # Statistical features
-        features["pub_avg_rating"] = df["publisher"].map(pub_stats["pub_avg_rating"]).fillna(self._stats_cache["global_mean"])
-        features["pub_book_count_log"] = np.log1p(df["publisher"].map(pub_stats["pub_book_count"]).fillna(1))
-        features["pub_std_rating"] = df["publisher"].map(pub_stats["pub_std_rating"]).fillna(self._stats_cache["global_std"])
-
-        features["author_avg_rating"] = df["author"].map(auth_stats["author_avg_rating"]).fillna(self._stats_cache["global_mean"])
-        features["author_book_count_log"] = np.log1p(df["author"].map(auth_stats["author_book_count"]).fillna(1))
-
-        features["binding_score"] = df["binding"].map(lambda x: binding_stats.get(x, self._stats_cache["global_mean"]))
-
-        # Raw features
-        features["pub_year"] = df["pub_year"].clip(1900, 2030)
-        features["pages_log"] = np.log1p(df["pages"].clip(10, 5000))
-        features["is_translation"] = df["is_translation"]
-        features["is_series"] = df["is_series"]
-        features["votes_log"] = np.log1p(df["Votes"])
+        features["pub_avg_rating"] = pub_avg
+        features["pub_book_count_log"] = np.log1p(np.maximum(pub_cnt, 1))
+        features["pub_std_rating"] = pub_std
+        features["author_avg_rating"] = auth_avg
+        features["author_book_count_log"] = np.log1p(np.maximum(auth_cnt, 1))
+        features["binding_score"] = np.array([bind_train.get(b, gm) for b in df["binding"].values])
+        features["pub_year"] = df["pub_year"].clip(1900, 2030).values.astype(float)
+        features["pages_log"] = np.log1p(df["pages"].clip(10, 5000).values)
+        features["is_translation"] = df["is_translation"].values.astype(float)
+        features["is_series"] = df["is_series"].values.astype(float)
 
         self.feature_names = [
             "pub_avg_rating", "pub_book_count_log", "pub_std_rating",
             "author_avg_rating", "author_book_count_log",
             "binding_score", "pub_year", "pages_log",
-            "is_translation", "is_series", "votes_log"
+            "is_translation", "is_series"
         ]
 
-        # Build matrix
-        X_list = [features[name].values for name in self.feature_names]
+        X_list = [features[name] for name in self.feature_names]
         X = np.column_stack(X_list)
         self.feature_matrix = X
         self.book_ids = df["ID"].values
         self.titles = df["Title"].values
 
-        print(f"  Feature matrix: {X.shape}")
-        print(f"  Features: {self.feature_names}")
+        # Store book meta
+        self._book_meta = {}
+        for _, row in df.iterrows():
+            self._book_meta[int(row["ID"])] = {
+                "title": str(row["Title"]), "rating": float(row["Rating"]),
+                "author": str(row["author"]), "publisher": str(row["publisher"]),
+            }
+
+        print(f"  Feature matrix: {X.shape} (10 features, LOO stats)")
         return self
 
     def train(self):
@@ -190,6 +245,7 @@ class ColdStartPredictor:
             "R2": r2_score(y, y_pred),
             "CV_R2": float(np.mean(cv_scores)),
             "CV_R2_std": float(np.std(cv_scores)),
+            "n_samples": len(y),
             "n_samples": len(y),
         }
         print(f"  MAE: {self.metrics['MAE']:.3f}")
@@ -256,8 +312,10 @@ class ColdStartPredictor:
         predictor._book_meta = data.get("book_meta", {})
         return predictor
 
-    def predict(self, author, publisher, pub_year, pages, binding, is_translation, is_series, votes_estimate=1000):
-        """预测单本书的评分，返回 (prediction, lower_bound, upper_bound, feature_vector)"""
+    def predict(self, author, publisher, pub_year, pages, binding, is_translation, is_series, votes_estimate=None):
+        """v3: 预测单本书评分（10 维特征，无 votes_log）
+        返回 (prediction, lower_bound, upper_bound, feature_vector, similar_books)
+        votes_estimate 参数保留兼容但不再使用"""
         from sklearn.metrics.pairwise import cosine_similarity
 
         pub_stats = self._stats_cache["publisher"]
@@ -266,7 +324,7 @@ class ColdStartPredictor:
         global_mean = self._stats_cache["global_mean"]
         global_std = self._stats_cache["global_std"]
 
-        # Build feature vector (same order as feature_names)
+        # Build feature vector (10 features, no votes_log)
         features = {}
 
         if publisher in pub_stats.index:
@@ -290,7 +348,6 @@ class ColdStartPredictor:
         features["pages_log"] = np.log1p(max(10, min(pages, 5000)))
         features["is_translation"] = int(is_translation)
         features["is_series"] = int(is_series)
-        features["votes_log"] = np.log1p(max(1, votes_estimate))
 
         X = np.array([[features[name] for name in self.feature_names]])
 
@@ -356,7 +413,7 @@ if __name__ == "__main__":
     pred, low, up, _, similar = csp.predict(
         author="余华", publisher="人民文学出版社",
         pub_year=2025, pages=350, binding="平装",
-        is_translation=False, is_series=False, votes_estimate=5000
+        is_translation=False, is_series=False,
     )
     print(f"\n[Test] 余华 / 人民文学出版社 / 2025 / 350p")
     print(f"  Predicted: {pred:.2f}  [{low:.2f} - {up:.2f}]")

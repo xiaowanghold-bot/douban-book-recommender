@@ -16,7 +16,7 @@ import warnings
 from pathlib import Path
 warnings.filterwarnings("ignore")
 
-from utils import setup_chinese_font, _CJK_FONT_CANDIDATES
+from src.utils import setup_chinese_font, _CJK_FONT_CANDIDATES
 setup_chinese_font()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -227,56 +227,67 @@ class RatingPredictor:
         return self
 
     def train(self):
-        """训练评分预测模型"""
+        """训练评分预测模型（v2: train-only 均值替代 LabelEncoder）"""
         from sklearn.ensemble import RandomForestRegressor
-        from sklearn.preprocessing import LabelEncoder
-        from sklearn.model_selection import cross_val_score
+        from sklearn.model_selection import cross_val_score, train_test_split
         from sklearn.metrics import mean_absolute_error, r2_score
 
-        print("\n[评分预测] 训练模型...")
+        print("\n[评分预测] 训练模型 (v2: train-only means)...")
 
-        df = self.df
-        # 特征
-        features = pd.DataFrame({
-            "price": df["price_num"],
-            "year": df["year_num"],
-            "pages": df["pages_num"].fillna(df["pages_num"].median()),
-            "votes_log": np.log1p(df["Votes"]),
-        })
-
-        # 编码分类特征
-        for col in ["author_clean", "publisher_clean", "binding_type"]:
-            le = LabelEncoder()
-            # 低频类别归为"其他"
-            counts = df[col].value_counts()
-            df[f"{col}_enc"] = df[col].apply(
-                lambda x: x if counts.get(x, 0) >= 3 else "其他")
-            features[col] = le.fit_transform(df[f"{col}_enc"])
-            self.encoders[col] = le
-
-        self.feature_names = list(features.columns)
-        X = features.values
+        df = self.df.copy()
         y = df["Rating"].values
 
-        # 训练
+        # Train/test split
+        train_idx, test_idx = train_test_split(np.arange(len(df)), test_size=0.2, random_state=42)
+
+        # Train-only means
+        train_df = df.iloc[train_idx]
+        global_mean = float(y[train_idx].mean())
+        author_means = train_df.groupby("author_clean")["Rating"].mean().to_dict()
+        publisher_means = train_df.groupby("publisher_clean")["Rating"].mean().to_dict()
+        binding_means = train_df.groupby("binding_type")["Rating"].mean().to_dict()
+
+        features = pd.DataFrame({
+            "price": df["price_num"].values,
+            "year": df["year_num"].values,
+            "pages": df["pages_num"].fillna(df["pages_num"].median()).values,
+            "votes_log": np.log1p(df["Votes"].values),
+            "author_mean": df["author_clean"].map(author_means).fillna(global_mean).values,
+            "publisher_mean": df["publisher_clean"].map(publisher_means).fillna(global_mean).values,
+            "binding_mean": df["binding_type"].map(binding_means).fillna(global_mean).values,
+        })
+
+        self.feature_names = list(features.columns)
+        self.encoders = {
+            "author_means": author_means,
+            "publisher_means": publisher_means,
+            "binding_means": binding_means,
+            "global_mean": global_mean,
+        }
+
+        X = features.values
+        X_train = X[train_idx]
+        y_train = y[train_idx]
+
         self.model = RandomForestRegressor(
             n_estimators=100, max_depth=12, min_samples_leaf=5,
             random_state=42, n_jobs=-1,
         )
-        self.model.fit(X, y)
+        self.model.fit(X_train, y_train)
 
-        # 评估
-        y_pred = self.model.predict(X)
-        self.metrics["MAE"] = mean_absolute_error(y, y_pred)
-        self.metrics["R2"] = r2_score(y, y_pred)
-        cv_scores = cross_val_score(self.model, X, y, cv=5, scoring="r2")
+        X_test = X[test_idx]
+        y_test = y[test_idx]
+        y_pred = self.model.predict(X_test)
+        self.metrics["MAE"] = mean_absolute_error(y_test, y_pred)
+        self.metrics["R2"] = r2_score(y_test, y_pred)
+        cv_scores = cross_val_score(self.model, X_train, y_train, cv=5, scoring="r2")
         self.metrics["CV_R2"] = cv_scores.mean()
 
-        print(f"  MAE: {self.metrics['MAE']:.3f} (平均误差)")
-        print(f"  R2:  {self.metrics['R2']:.3f}")
-        print(f"  CV5: {self.metrics['CV_R2']:.3f} (5折交叉验证)")
+        print(f"  训练集: {len(train_idx)}, 测试集: {len(test_idx)}")
+        print(f"  MAE (test): {self.metrics['MAE']:.3f}")
+        print(f"  R2  (test): {self.metrics['R2']:.3f}")
+        print(f"  CV5 (train): {self.metrics['CV_R2']:.3f}")
 
-        # 特征重要性
         importances = self.model.feature_importances_
         indices = np.argsort(importances)[::-1]
         print("  特征重要性:")
@@ -284,7 +295,7 @@ class RatingPredictor:
             print(f"    {self.feature_names[i]:<20s}: {importances[i]:.4f}")
 
         self._plot_feature_importance(importances, indices)
-        self._plot_predictions(y, y_pred)
+        self._plot_predictions(y_test, y_pred)
 
         # 保存模型
         model_dir = DATA_DIR / "models"
@@ -299,7 +310,6 @@ class RatingPredictor:
         print(f"  [保存] rating_predictor.pkl")
 
         return self
-
     def _plot_feature_importance(self, importances, indices):
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.barh(range(len(indices)), importances[indices], color="#3498DB")
@@ -336,31 +346,28 @@ class RatingPredictor:
         print("  [图表16] 预测散点图")
 
     def predict(self, price, year, pages, votes, author="未知", publisher="未知", binding="平装"):
-        """单条预测"""
+        """单条预测（v2: train-only means）"""
         if self.model is None:
             return None
+
+        author_clean = re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(author)).strip()[:30]
+        publisher_clean = str(publisher).strip()[:20]
+        binding_type = "平装" if "平装" in str(binding) else ("精装" if "精装" in str(binding) else "其他")
+
+        gm = self.encoders.get("global_mean", 8.0)
+        author_mean = self.encoders.get("author_means", {}).get(author_clean, gm)
+        publisher_mean = self.encoders.get("publisher_means", {}).get(publisher_clean, gm)
+        binding_mean = self.encoders.get("binding_means", {}).get(binding_type, gm)
 
         features = {
             "price": price,
             "year": year,
             "pages": pages,
             "votes_log": np.log1p(votes),
+            "author_mean": author_mean,
+            "publisher_mean": publisher_mean,
+            "binding_mean": binding_mean,
         }
-
-        # 清理输入
-        author_clean = re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(author)).strip()[:30]
-        publisher_clean = str(publisher).strip()[:20]
-        binding_type = "平装" if "平装" in str(binding) else ("精装" if "精装" in str(binding) else "其他")
-
-        for col, val in [("author_clean", author_clean),
-                         ("publisher_clean", publisher_clean),
-                         ("binding_type", binding_type)]:
-            counts = self.df[col].value_counts()
-            val_enc = val if counts.get(val, 0) >= 3 else "其他"
-            try:
-                features[col] = self.encoders[col].transform([val_enc])[0]
-            except ValueError:
-                features[col] = 0
 
         X = np.array([[features[n] for n in self.feature_names]])
         return float(self.model.predict(X)[0])

@@ -17,7 +17,7 @@ from pathlib import Path
 import random
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -328,50 +328,35 @@ def run_experiment_b():
     mae_auth = mean_absolute_error(y_test, test_auth_preds)
     print(f"  作者均值 baseline  : RMSE={rmse_auth:.4f}, MAE={mae_auth:.4f}")
 
-    # RandomForest（仅用训练集）
-    le_author = LabelEncoder()
-    le_pub = LabelEncoder()
-    le_bind = LabelEncoder()
+    # RandomForest v2（train-only 均值替代 LabelEncoder）
+    train_global_mean = y_train.mean()
+    train_author_means = train_df.groupby("author_clean_enc")["rating"].mean().to_dict()
+    train_pub_means = train_df.groupby("publisher_clean_enc")["rating"].mean().to_dict()
+    train_bind_means = train_df.groupby("binding_type_enc")["rating"].mean().to_dict()
 
-    X_train = pd.DataFrame({
-        "price": train_df["price_num"],
-        "year": train_df["year_num"],
-        "pages": train_df["pages_num"],
-        "votes_log": np.log1p(train_df["votes"]),
-        "author_clean": le_author.fit_transform(train_df["author_clean_enc"]),
-        "publisher_clean": le_pub.fit_transform(train_df["publisher_clean_enc"]),
-        "binding_type": le_bind.fit_transform(train_df["binding_type_enc"]),
-    }).values
+    def build_features_v2(subset, author_m, pub_m, bind_m, fallback):
+        return pd.DataFrame({
+            "price": subset["price_num"],
+            "year": subset["year_num"],
+            "pages": subset["pages_num"],
+            "votes_log": np.log1p(subset["votes"]),
+            "author_mean": subset["author_clean_enc"].map(author_m).fillna(fallback),
+            "publisher_mean": subset["publisher_clean_enc"].map(pub_m).fillna(fallback),
+            "binding_mean": subset["binding_type_enc"].map(bind_m).fillna(fallback),
+        }).values
 
-    # 处理测试集未见类别
-    def safe_transform(le, series):
-        result = []
-        for v in series:
-            try:
-                result.append(le.transform([v])[0])
-            except ValueError:
-                result.append(-1)
-        return result
-
-    X_test = pd.DataFrame({
-        "price": test_df["price_num"],
-        "year": test_df["year_num"],
-        "pages": test_df["pages_num"],
-        "votes_log": np.log1p(test_df["votes"]),
-        "author_clean": safe_transform(le_author, test_df["author_clean_enc"]),
-        "publisher_clean": safe_transform(le_pub, test_df["publisher_clean_enc"]),
-        "binding_type": safe_transform(le_bind, test_df["binding_type_enc"]),
-    }).values
+    X_train_v2 = build_features_v2(train_df, train_author_means, train_pub_means, train_bind_means, train_global_mean)
+    X_test_v2 = build_features_v2(test_df, train_author_means, train_pub_means, train_bind_means, train_global_mean)
 
     rf = RandomForestRegressor(
         n_estimators=100, max_depth=12, min_samples_leaf=5,
         random_state=42, n_jobs=-1,
     )
-    rf.fit(X_train, y_train)
-    y_pred_rf = rf.predict(X_test)
+    rf.fit(X_train_v2, y_train)
+    y_pred_rf = rf.predict(X_test_v2)
     rmse_rf = np.sqrt(mean_squared_error(y_test, y_pred_rf))
     mae_rf = mean_absolute_error(y_test, y_pred_rf)
-    print(f"  RandomForest       : RMSE={rmse_rf:.4f}, MAE={mae_rf:.4f}")
+    print(f"  RandomForest v2    : RMSE={rmse_rf:.4f}, MAE={mae_rf:.4f}")
 
     lines = [
         "## 实验 B: 评分预测正规评估",
@@ -385,7 +370,7 @@ def run_experiment_b():
         f"| 全局均值 | {rmse_global:.4f} | {mae_global:.4f} |",
         f"| 出版社均值 | {rmse_pub:.4f} | {mae_pub:.4f} |",
         f"| 作者均值 | {rmse_auth:.4f} | {mae_auth:.4f} |",
-        f"| RandomForest | {rmse_rf:.4f} | {mae_rf:.4f} |",
+        f"| RandomForest (修复后, train-only means) | {rmse_rf:.4f} | {mae_rf:.4f} |",
         "",
     ]
 
@@ -574,9 +559,9 @@ def run_experiment_c():
         ("v2_10feat_no_votes", X_train_v2, X_test_v2),
         ("v3_10feat_trainonly", X_train_v3, X_test_v3),
     ]:
-        model = RandomForestRegressor(
-            n_estimators=100, max_depth=10, min_samples_leaf=5,
-            random_state=42, n_jobs=-1,
+        model = GradientBoostingRegressor(
+            n_estimators=200, max_depth=4, learning_rate=0.05,
+            subsample=0.8, random_state=42,
         )
         model.fit(X_tr, y_train)
         y_pred = model.predict(X_te)
@@ -599,7 +584,7 @@ def run_experiment_c():
         "### 对比实验",
         "",
         f"- 训练集: {len(train_df):,} 条, 测试集: {len(test_df):,} 条",
-        "- 模型: RandomForestRegressor(n_estimators=100, max_depth=10, min_samples_leaf=5, random_state=42)",
+        "- 模型: GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42) — 与生产冷启动模型同配置",
         "",
         "| 版本 | RMSE | R² |",
         "|------|------|----|",

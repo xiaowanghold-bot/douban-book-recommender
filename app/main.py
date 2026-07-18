@@ -265,7 +265,7 @@ with st.sidebar:
     st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
     st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
     st.sidebar.caption("推荐引擎: TF-IDF + Cosine")
-    st.sidebar.caption("评分预测: RF MAE=0.40")
+    st.sidebar.caption("评分预测: GBR R2=0.50 | 冷启动: LOO MAE=0.22")
     st.sidebar.caption("江南大学 · 大创项目")
     st.sidebar.success("📁 xiaowanghold-bot/douban-book-recommender")
 # ======================================================================
@@ -499,7 +499,7 @@ if page == "🏠 首页":
         (fc1, "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
         (fc2, "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
         (fc3, "🏢", "出版社与作者", "221社+878位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
-        (fc4, "🔮", "评分预测", "MAE=0.40 R²=0.49", "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
+        (fc4, "🔮", "评分预测", "R²=0.50", "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
     ]
     for col, icon, title, desc, c1, c2, target, btn_text, btn_key in nav_data:
         with col:
@@ -860,9 +860,10 @@ elif page == "🔮 评分预测":
     with st.expander("🧠 模型信息（点击展开）", expanded=False):
         st.markdown("""
         **RandomForest 回归模型**
-        - MAE: **0.40** (平均预测误差)
-        - R²: **0.49** (拟合度)
-        - 5折交叉验证 R²: **0.43**
+        - 训练 MAE (LOO): **0.22** (留一法平均误差)
+        - 训练 R² (LOO): **0.80** (拟合优度)
+        - 5折交叉验证 R²: **0.72**
+        - 测试集 R²: **0.50** (严谨版)
         - 7 维特征：价格 / 年份 / 页数 / 评价人数 + 作者 / 出版社 / 装帧
         """)
 
@@ -999,7 +1000,7 @@ elif page == "📋 关于项目":
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
 - **内容推荐引擎**：字符级 N-gram + TF-IDF + 余弦相似度，去重同书名
 - **出版社/作者分析**：221 家出版社、878 位作者综合评价矩阵
-- **评分预测**：RandomForest 回归，7 维特征，MAE = 0.40
+- **评分预测**：GradientBoosting 回归 + 冷启动评分预测 (v3: 10维LOO特征, 测试R²=0.50)
 
 ### 数据来源
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)

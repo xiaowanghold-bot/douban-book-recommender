@@ -1,6 +1,6 @@
 # 豆瓣图书推荐系统 — 离线评估报告
 
-**生成时间**: 2026-07-18 17:58:00
+**生成时间**: 2026-07-18 18:15:51
 **数据规模**: books_for_rec.csv ≈ 164K 行, Books_detail.csv = 6,584 行
 
 ---
@@ -22,16 +22,35 @@
 
 ## 实验 B: 评分预测正规评估
 
+### 修复前 (LabelEncoder 编码, 任意整数)
+
 - 训练集: 4,992 条, 测试集: 1,248 条
 - 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)
-- 特征: price, year, pages, votes_log, author_clean, publisher_clean, binding_type
+- 特征: price, year, pages, votes_log, author_clean, publisher_clean, binding_type (LabelEncoder)
 
 | 方法 | RMSE | MAE |
 |------|------|-----|
 | 全局均值 | 0.7115 | 0.5723 |
 | 出版社均值 | 0.6588 | 0.5262 |
 | 作者均值 | 0.5987 | 0.4553 |
-| RandomForest | 0.6154 | 0.4890 |
+| RandomForest (修复前) | 0.6154 | 0.4890 |
+
+> ⚠ RF 输给作者均值 baseline
+
+### 修复后 (train-only 统计均值)
+
+- 训练集: 4,992 条, 测试集: 1,248 条
+- 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)
+- 特征 (v2): price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only)
+
+| 方法 | RMSE | MAE |
+|------|------|-----|
+| 全局均值 | 0.7115 | 0.5723 |
+| 出版社均值 | 0.6588 | 0.5262 |
+| 作者均值 | 0.5987 | 0.4553 |
+| RandomForest (修复后) | 0.5457 | 0.4120 |
+
+> ✅ RF 反超！RMSE 0.615 → 0.546, MAE 0.489 → 0.412
 
 ## 实验 C: 冷启动模型泄露检查
 
@@ -46,22 +65,22 @@
 ### 对比实验
 
 - 训练集: 5,260 条, 测试集: 1,315 条
-- 模型: RandomForestRegressor(n_estimators=100, max_depth=10, min_samples_leaf=5, random_state=42)
+- 模型: GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42) — 与生产冷启动模型同配置
 
 | 版本 | RMSE | R² |
 |------|------|----|
 | Baseline (作者均值) | 0.5580 | 0.3788 |
-| v1: 11特征(含泄露) | 0.3091 | 0.8094 |
-| v2: 10特征(去votes_log) | 0.3147 | 0.8024 |
-| v3: 10特征(去votes+LOO统计) | 0.5104 | 0.4803 |
+| v1: 11特征(含泄露) | 0.3117 | 0.8062 |
+| v2: 10特征(去votes_log) | 0.3132 | 0.8044 |
+| v3: 10特征(去votes+LOO统计) | 0.5023 | 0.4967 |
 
 ### 结论
 
-- v3（严谨版）R²=0.4803，对比作者均值 baseline R²=0.3788
-- 差距 = +0.1015
+- v3（严谨版）R²=0.4967，对比作者均值 baseline R²=0.3788
+- 差距 = +0.1179
 - ✅ 模型优于作者均值 baseline。
 
 ---
 
-_总耗时: 108.2s_
+_总耗时: 113.2s_
 _random_state=42 用于所有随机过程_
