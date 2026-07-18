@@ -264,7 +264,7 @@ with st.sidebar:
     st.sidebar.caption("详细信息: {0:,} 本".format(len(detail_df) if detail_df is not None else 0))
     st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
     st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
-    st.sidebar.caption("推荐引擎: TF-IDF + Cosine")
+    st.sidebar.caption("推荐引擎: jieba 语义 TF-IDF + Cosine")
     st.sidebar.caption("评分预测: GBR R2=0.50 | 冷启动: LOO MAE=0.22")
     st.sidebar.caption("江南大学 · 大创项目")
     st.sidebar.success("📁 xiaowanghold-bot/douban-book-recommender")
@@ -998,7 +998,7 @@ elif page == "📋 关于项目":
 
 ### 技术方案
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
-- **内容推荐引擎**：字符级 N-gram + TF-IDF + 余弦相似度，去重同书名
+- **内容推荐引擎**：jieba 语义 TF-IDF + 余弦相似度，融合书名/标签/作者/简介，去重同书名
 - **出版社/作者分析**：221 家出版社、878 位作者综合评价矩阵
 - **评分预测**：GradientBoosting 回归 + 冷启动评分预测 (v3: 10维LOO特征, 测试R²=0.50)
 

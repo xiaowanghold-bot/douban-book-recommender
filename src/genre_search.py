@@ -59,6 +59,8 @@ def build_genre_search_index(df, desc_json_path="data/processed/book_description
     
     texts = {}
     for _, row in df.iterrows():
+        if row["id"] in existing_ids:
+            continue
         bid = str(int(row["id"]))
         title = str(row.get("title", ""))
         desc = descs.get(bid, "")
@@ -69,46 +71,42 @@ def build_genre_search_index(df, desc_json_path="data/processed/book_description
 
 
 def search_books_by_genre(genre_name, df, text_index, top_n=30, min_votes=10):
-    """关键词匹配 + 贝叶斯评分排序"""
-    keywords = GENRE_KEYWORDS.get(genre_name, [genre_name])
-    
+    """语义搜索优先 + 关键词匹配 fallback"""
     results = []
-    for _, row in df.iterrows():
-        bid = int(row["id"])
-        votes = int(row.get("votes", 0))
-        if votes < min_votes:
-            continue
-        
-        text = text_index.get(bid, str(row.get("title", "")))
-        
-        match_count = 0
-        matched = []
-        for kw in keywords:
-            if kw.lower() in text.lower():
-                match_count += 1
-                matched.append(kw)
-        
-        if match_count == 0:
-            continue
-        
-        results.append({
-            "id": bid,
-            "title": str(row.get("title", "")),
-            "rating": float(row.get("rating", 0)),
-            "votes": votes,
-            "bayesian_score": float(row.get("bayesian_score", 0)),
-            "_match_count": match_count,
-        })
     
-    if not results:
-        return pd.DataFrame()
+    # 优先使用语义搜索 (recommend_by_title)
+    try:
+        from src.recommendation import BookRecommender
+        rec = BookRecommender()
+        rec._load_artifacts()
+        semantic_results = rec.recommend_by_title(genre_name, top_n=top_n)
+        if not semantic_results.empty and len(semantic_results) >= 5:
+            # 语义结果足够，直接返回
+            for _, row in semantic_results.iterrows():
+                results.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "rating": row["rating"],
+                    "votes": row["votes"],
+                    "bayesian_score": row.get("bayesian_score", 0),
+                    "similarity": row["similarity"],
+                })
+            return results[:top_n]
+        elif not semantic_results.empty:
+            # 语义结果 <5 条，保留并补充
+            for _, row in semantic_results.iterrows():
+                results.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "rating": row["rating"],
+                    "votes": row["votes"],
+                    "bayesian_score": row.get("bayesian_score", 0),
+                    "similarity": row["similarity"],
+                })
+            existing_ids = set(r["id"] for r in results)
+    except Exception as e:
+        print(f"[genre_search] 语义搜索失败, 回退到关键词: {e}")
+        existing_ids = set()
     
-    res = pd.DataFrame(results)
-    max_m = res["_match_count"].max()
-    res["_combined"] = (
-        0.5 * res["_match_count"] / max_m +
-        0.5 * res["rating"] / 10
-    )
-    res = res.sort_values(["_match_count", "_combined"], ascending=False).head(top_n)
-    res["_match_pct"] = (res["_match_count"] / max_m * 100).round(0).astype(int)
-    return res
+    # Fallback: GENRE_KEYWORDS 关键词匹配 (仅在语义结果不足时补充)
+    keywords = GENRE_KEYWORDS.get(genre_name, [genre_name])

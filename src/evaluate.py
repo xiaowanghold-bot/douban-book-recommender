@@ -1,11 +1,11 @@
 ﻿"""
-绂荤嚎璇勪及鑴氭湰 鈥?璞嗙摚鍥句功鎺ㄨ崘绯荤粺
+离线评估脚本 — 豆瓣图书推荐系统
 ================================
-瀹為獙 A: 鍚岀郴鍒?Recall@K
-瀹為獙 B: 璇勫垎棰勬祴姝ｈ璇勪及
-瀹為獙 C: 鍐峰惎鍔ㄦā鍨嬫硠闇叉鏌?
+实验 A: 同系列 Recall@K
+实验 B: 评分预测正规评估
+实验 C: 冷启动模型泄露检查
 
-鐢ㄦ硶: python -m src.evaluate --experiment all|rec|rating|coldstart
+用法: python -m src.evaluate --experiment all|rec|rating|coldstart
 """
 import argparse
 import sys
@@ -34,31 +34,25 @@ REPORT_DIR = ROOT / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
-#  鍏变韩宸ュ叿
+#  共享工具
 # ============================================================================
 
 def load_recommender():
-    """鍔犺浇宸叉瀯寤虹殑 BookRecommender锛堝惈棰勮绠楁渶杩戦偦锛?""
+    """Load BookRecommender with pre-built NN index"""
     sys.path.insert(0, str(ROOT))
     from src.recommendation import BookRecommender
     rec = BookRecommender()
     rec._load_artifacts()
-    # 鍔犺浇棰勮绠楃殑鏈€杩戦偦
-    nn_path = rec.model_dir / "nn_neighbors.npz"
-    if nn_path.exists():
-        data = np.load(nn_path)
-        rec.nn_distances = data["distances"]
-        rec.nn_indices = data["indices"]
-        print(f"[鍔犺浇] 棰勮绠楁渶杩戦偦 ({rec.nn_indices.shape[1]} 杩戦偦)")
-    else:
+    if not hasattr(rec, 'nn_indices') or rec.nn_indices is None:
         rec.build_nn_index(n_neighbors=30)
+        rec.nn_distances, rec.nn_indices = rec.nn_model.kneighbors(rec.tfidf_matrix)
+    print(f"[OK] NN ready ({rec.nn_indices.shape[1]} neighbors)")
     return rec
 
-
 def load_books_detail():
-    """鍔犺浇 Books_detail.csv"""
+    """加载 Books_detail.csv"""
     df = pd.read_csv(RAW_DIR / "Books_detail.csv", encoding="utf-8-sig")
-    # 缁熶竴鍒楀悕
+    # 统一列名
     df = df.rename(columns={"ID": "id", "Rating": "rating", "Votes": "votes",
                              "Title": "title"})
     df = df[df["crawl_status"] == "success"].copy()
@@ -68,13 +62,13 @@ def load_books_detail():
 
 
 # ============================================================================
-#  瀹為獙 A: 鍚岀郴鍒?Recall@K
+#  实验 A: 同系列 Recall@K
 # ============================================================================
 
 def run_experiment_a():
-    """鍚岀郴鍒?Recall@K 璇勪及锛堜娇鐢ㄩ璁＄畻 NN锛岄伩鍏嶉€愭璋冪敤 API锛?""
+    """同系列 Recall@K 评估（使用预计算 NN，避免逐次调用 API）"""
     print("\n" + "=" * 70)
-    print("  瀹為獙 A: 鍚岀郴鍒?Recall@K")
+    print("  实验 A: 同系列 Recall@K")
     print("=" * 70)
 
     detail = load_books_detail()
@@ -90,13 +84,13 @@ def run_experiment_a():
 
     n_queries = len(eval_books)
     n_series = len(valid_series)
-    print(f"  璇勪及鏌ヨ涔︽暟: {n_queries}", flush=True)
-    print(f"  绯诲垪鏁? {n_series}", flush=True)
+    print(f"  评估查询书数: {n_queries}", flush=True)
+    print(f"  系列数: {n_series}", flush=True)
 
     if n_queries < 100:
-        print(f"  [WARN] 鏍锋湰閲?< 100锛岀粨鏋滀粎渚涘弬鑰?)
+        print(f"  [WARN] 样本量 < 100，结果仅供参考")
 
-    # 鏋勫缓绯诲垪鍐呮垚鍛樻槧灏?
+    # 构建系列内成员映射
     series_members = {}
     for _, row in eval_books.iterrows():
         s = row["series"]
@@ -104,27 +98,27 @@ def run_experiment_a():
             series_members[s] = set()
         series_members[s].add(int(row["id"]))
 
-    # 鍔犺浇鎺ㄨ崘寮曟搸 + 棰勮绠?NN
+    # 加载推荐引擎 + 预计算 NN
     rec = load_recommender()
     nn_indices = rec.nn_indices  # shape: (n_books, n_neighbors)
     nn_distances = rec.nn_distances
 
-    # book_id -> matrix_idx 鏄犲皠
+    # book_id -> matrix_idx 映射
     id_to_idx = rec.id_to_idx
     idx_to_id = rec.idx_to_id
 
-    # 棰勫彇鏍囬鏁扮粍鍔犻€?
+    # 预取标题数组加速
     titles_arr = rec.df["title"].values
 
-    # 鎸?bayesian_score 鎺掑簭锛堢敤浜?Popular baseline锛?
+    # 按 bayesian_score 排序（用于 Popular baseline）
     popular_ids = rec_df.nlargest(len(rec_df), "bayesian_score")["id"].tolist()
     all_ids_set = set(int(x) for x in rec_df["id"])
 
     K_values = [10, 20]
     results = {}
 
-    # 棰勮绠楁瘡涓煡璇㈠湪 NN 涓殑绱㈠紩鍜屽畠鍦?popular 涓殑鎺掑悕
-    # 鏋勫缓 series book -> 璇ョ郴鍒楀叾浠栨垚鍛樼殑 set 鏄犲皠锛堝姞閫燂級
+    # 预计算每个查询在 NN 中的索引和它在 popular 中的排名
+    # 构建 series book -> 该系列其他成员的 set 映射（加速）
     book_to_series_others = {}
     for _, row in eval_books.iterrows():
         bid = int(row["id"])
@@ -133,7 +127,7 @@ def run_experiment_a():
     for K in K_values:
         print(f"\n  --- K = {K} ---")
 
-        # 鏂规硶1: recommend_by_id锛堢洿鎺ヤ娇鐢ㄩ璁＄畻 NN锛?
+        # 方法1: recommend_by_id（直接使用预计算 NN）
         recall1 = []
         n_evaled = 0
         for _, row in eval_books.iterrows():
@@ -148,7 +142,7 @@ def run_experiment_a():
                 if midx is None:
                     recall1.append(0.0)
                     continue
-                # 鍙栧墠 search_range 涓偦灞咃紙鎺掗櫎鑷繁锛屽幓閲嶅悓涔﹀悕锛?
+                # 取前 search_range 个邻居（排除自己，去重同书名）
                 neighbors = nn_indices[midx]
                 seen_titles = set()
                 hits = 0
@@ -174,7 +168,7 @@ def run_experiment_a():
         mean_recall1 = np.mean(recall1) if recall1 else 0.0
         print(f"  recommend_by_id    : Recall@{K} = {mean_recall1:.4f}  (n={len(recall1)})")
 
-        # 鏂规硶2: Random baseline (浣跨敤 numpy 鐩存帴浠庡叏搴揑D鏁扮粍閲囨牱锛岄伩鍏嶉噸澶嶅垎閰嶅ぇ鍒楄〃)
+        # 方法2: Random baseline (使用 numpy 直接从全库ID数组采样，避免重复分配大列表)
         recall_random_trials = []
         all_ids_arr = np.array(sorted(all_ids_set), dtype=np.int64)
         for trial in range(5):
@@ -186,7 +180,7 @@ def run_experiment_a():
                 if not series_others:
                     continue
                 denominator = min(K, len(series_others))
-                # 浠庡叏搴撻殢鏈哄彇 K+1 鏈紙涓囦竴鎶藉埌鑷韩鍒欏鍙栵級锛屽幓鎺夎嚜韬悗鍙?K 鏈?
+                # 从全库随机取 K+1 本（万一抽到自身则多取），去掉自身后取 K 本
                 sample_size = min(K + 1, len(all_ids_arr))
                 sampled = rng.choice(all_ids_arr, size=sample_size, replace=False)
                 sampled = [int(s) for s in sampled if int(s) != bid][:K]
@@ -196,7 +190,7 @@ def run_experiment_a():
         mean_random = np.mean(recall_random_trials)
         print(f"  Random baseline    : Recall@{K} = {mean_random:.4f}  (avg of 5 trials)")
 
-        # 鏂规硶3: Popular baseline
+        # 方法3: Popular baseline
         recall_pop = []
         for _, row in eval_books.iterrows():
             bid = int(row["id"])
@@ -217,18 +211,18 @@ def run_experiment_a():
             "n_queries": n_evaled,
         }
 
-    # 鐢熸垚鎶ュ憡
+    # 生成报告
     lines = [
-        "## 瀹為獙 A: 鍚岀郴鍒?Recall@K",
+        "## 实验 A: 同系列 Recall@K",
         "",
-        "> 鈿?**鏂规硶灞€闄愭€ц鏄?*: 鏈」鐩帹鑽愬紩鎿庡熀浜庡瓧绗︾骇 n-gram TF-IDF + 浣欏鸡鐩镐技搴︼紝",
-        "> 鍚岀郴鍒椾功鍚嶏紙濡傘€婁笁浣撱€?銆婁笁浣揑I銆嬶級澶╃劧瀛楃閲嶅彔搴﹂珮锛孯ecall 鎸囨爣浼氶珮浼板疄闄呰涔夋帹鑽愯兘鍔涖€?,
+        "> ⚠ **方法局限性说明**: 本项目推荐引擎基于字符级 n-gram TF-IDF + 余弦相似度，",
+        "> 同系列书名（如《三体》/《三体II》）天然字符重叠度高，Recall 指标会高估实际语义推荐能力。",
         "",
-        f"- 鏌ヨ涔︽暟: {n_queries}",
-        f"- 绯诲垪鏁? {n_series}",
-        f"- 绯诲垪骞冲潎瑙勬ā: {n_queries / n_series:.1f} 鏈?,
+        f"- 查询书数: {n_queries}",
+        f"- 系列数: {n_series}",
+        f"- 系列平均规模: {n_queries / n_series:.1f} 本",
         "",
-        "| 鏂规硶 | Recall@10 | Recall@20 | 鏈夋晥鏌ヨ鏁?|",
+        "| 方法 | Recall@10 | Recall@20 | 有效查询数 |",
         "|------|-----------|-----------|-----------|",
     ]
     r10 = results[10]
@@ -248,18 +242,18 @@ def run_experiment_a():
 
 
 # ============================================================================
-#  瀹為獙 B: 璇勫垎棰勬祴姝ｈ璇勪及
+#  实验 B: 评分预测正规评估
 # ============================================================================
 
 def run_experiment_b():
-    """璇勫垎棰勬祴锛圧andomForest锛夋瑙勮瘎浼?""
+    """评分预测（RandomForest）正规评估"""
     print("\n" + "=" * 70)
-    print("  瀹為獙 B: 璇勫垎棰勬祴姝ｈ璇勪及")
+    print("  实验 B: 评分预测正规评估")
     print("=" * 70)
 
     detail = load_books_detail()
 
-    # ===== 鐗瑰緛宸ョ▼锛堝鍒惰嚜 enhancements.py RatingPredictor锛?=====
+    # ===== 特征工程（复制自 enhancements.py RatingPredictor） =====
     def parse_price(text):
         import re
         if pd.isna(text):
@@ -280,55 +274,55 @@ def run_experiment_b():
     df["pages_num"] = pd.to_numeric(df["pages"], errors="coerce")
 
     df["author_clean"] = df["author"].apply(
-        lambda x: __import__("re").sub(r"\[.*?\]|\(.*?\)|锛?*?锛?, "", str(x)).strip()[:30]
-        if pd.notna(x) else "鏈煡")
-    df["publisher_clean"] = df["publisher"].fillna("鏈煡").astype(str).str[:20]
-    df["binding_type"] = df["binding"].fillna("鏈煡").apply(
-        lambda x: "骞宠" if "骞宠" in str(x) else ("绮捐" if "绮捐" in str(x) else "鍏朵粬"))
+        lambda x: __import__("re").sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(x)).strip()[:30]
+        if pd.notna(x) else "未知")
+    df["publisher_clean"] = df["publisher"].fillna("未知").astype(str).str[:20]
+    df["binding_type"] = df["binding"].fillna("未知").apply(
+        lambda x: "平装" if "平装" in str(x) else ("精装" if "精装" in str(x) else "其他"))
 
-    # 绛涢€夋湁鏁堣褰?
+    # 筛选有效记录
     df = df.dropna(subset=["rating", "price_num", "year_num", "pages_num"]).copy()
     df = df[df["year_num"].between(1950, 2025)]
     df = df[df["rating"].between(1, 10)]
     df["pages_num"] = df["pages_num"].fillna(df["pages_num"].median())
 
-    print(f"  鏈夋晥鏁版嵁: {len(df)} 鏉?)
+    print(f"  有效数据: {len(df)} 条")
 
-    # 缂栫爜浣庨绫诲埆
+    # 编码低频类别
     for col in ["author_clean", "publisher_clean", "binding_type"]:
         counts = df[col].value_counts()
         df[f"{col}_enc"] = df[col].apply(
-            lambda x, c=counts: x if c.get(x, 0) >= 3 else "鍏朵粬")
+            lambda x, c=counts: x if c.get(x, 0) >= 3 else "其他")
 
     # Train/test split
     train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
-    print(f"  璁粌闆? {len(train_df)}, 娴嬭瘯闆? {len(test_df)}")
+    print(f"  训练集: {len(train_df)}, 测试集: {len(test_df)}")
 
     y_train = train_df["rating"].values
     y_test = test_df["rating"].values
 
-    # Baseline 1: 鍏ㄥ眬鍧囧€?
+    # Baseline 1: 全局均值
     global_mean = y_train.mean()
     pred_global = np.full_like(y_test, global_mean)
     rmse_global = np.sqrt(mean_squared_error(y_test, pred_global))
     mae_global = mean_absolute_error(y_test, pred_global)
-    print(f"  鍏ㄥ眬鍧囧€?baseline : RMSE={rmse_global:.4f}, MAE={mae_global:.4f}")
+    print(f"  全局均值 baseline : RMSE={rmse_global:.4f}, MAE={mae_global:.4f}")
 
-    # Baseline 2: 鍑虹増绀惧潎鍊硷紙鏈鈫掑叏灞€鍧囧€硷級
+    # Baseline 2: 出版社均值（未见→全局均值）
     pub_means = train_df.groupby("publisher_clean_enc")["rating"].mean().to_dict()
     test_pub_preds = test_df["publisher_clean_enc"].map(pub_means).fillna(global_mean).values
     rmse_pub = np.sqrt(mean_squared_error(y_test, test_pub_preds))
     mae_pub = mean_absolute_error(y_test, test_pub_preds)
-    print(f"  鍑虹増绀惧潎鍊?baseline: RMSE={rmse_pub:.4f}, MAE={mae_pub:.4f}")
+    print(f"  出版社均值 baseline: RMSE={rmse_pub:.4f}, MAE={mae_pub:.4f}")
 
-    # Baseline 3: 浣滆€呭潎鍊硷紙鏈鈫掑叏灞€鍧囧€硷級
+    # Baseline 3: 作者均值（未见→全局均值）
     auth_means = train_df.groupby("author_clean_enc")["rating"].mean().to_dict()
     test_auth_preds = test_df["author_clean_enc"].map(auth_means).fillna(global_mean).values
     rmse_auth = np.sqrt(mean_squared_error(y_test, test_auth_preds))
     mae_auth = mean_absolute_error(y_test, test_auth_preds)
-    print(f"  浣滆€呭潎鍊?baseline  : RMSE={rmse_auth:.4f}, MAE={mae_auth:.4f}")
+    print(f"  作者均值 baseline  : RMSE={rmse_auth:.4f}, MAE={mae_auth:.4f}")
 
-    # RandomForest v2锛坱rain-only 鍧囧€兼浛浠?LabelEncoder锛?
+    # RandomForest v2（train-only 均值替代 LabelEncoder）
     train_global_mean = y_train.mean()
     train_author_means = train_df.groupby("author_clean_enc")["rating"].mean().to_dict()
     train_pub_means = train_df.groupby("publisher_clean_enc")["rating"].mean().to_dict()
@@ -359,18 +353,18 @@ def run_experiment_b():
     print(f"  RandomForest v2    : RMSE={rmse_rf:.4f}, MAE={mae_rf:.4f}")
 
     lines = [
-        "## 瀹為獙 B: 璇勫垎棰勬祴姝ｈ璇勪及",
+        "## 实验 B: 评分预测正规评估",
         "",
-        f"- 璁粌闆? {len(train_df):,} 鏉? 娴嬭瘯闆? {len(test_df):,} 鏉?,
-        "- 妯″瀷: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)",
-        "- 鐗瑰緛: price, year, pages, votes_log, author_clean, publisher_clean, binding_type",
+        f"- 训练集: {len(train_df):,} 条, 测试集: {len(test_df):,} 条",
+        "- 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)",
+        "- 特征: price, year, pages, votes_log, author_clean, publisher_clean, binding_type",
         "",
-        "| 鏂规硶 | RMSE | MAE |",
+        "| 方法 | RMSE | MAE |",
         "|------|------|-----|",
-        f"| 鍏ㄥ眬鍧囧€?| {rmse_global:.4f} | {mae_global:.4f} |",
-        f"| 鍑虹増绀惧潎鍊?| {rmse_pub:.4f} | {mae_pub:.4f} |",
-        f"| 浣滆€呭潎鍊?| {rmse_auth:.4f} | {mae_auth:.4f} |",
-        f"| RandomForest (淇鍚? train-only means) | {rmse_rf:.4f} | {mae_rf:.4f} |",
+        f"| 全局均值 | {rmse_global:.4f} | {mae_global:.4f} |",
+        f"| 出版社均值 | {rmse_pub:.4f} | {mae_pub:.4f} |",
+        f"| 作者均值 | {rmse_auth:.4f} | {mae_auth:.4f} |",
+        f"| RandomForest (修复后, train-only means) | {rmse_rf:.4f} | {mae_rf:.4f} |",
         "",
     ]
 
@@ -383,51 +377,51 @@ def run_experiment_b():
 
 
 # ============================================================================
-#  瀹為獙 C: 鍐峰惎鍔ㄦā鍨嬫硠闇叉鏌?
+#  实验 C: 冷启动模型泄露检查
 # ============================================================================
 
 def run_experiment_c():
-    """鍐峰惎鍔ㄦā鍨嬫硠闇叉鏌?""
+    """冷启动模型泄露检查"""
     print("\n" + "=" * 70)
-    print("  瀹為獙 C: 鍐峰惎鍔ㄦā鍨嬫硠闇叉鏌?)
+    print("  实验 C: 冷启动模型泄露检查")
     print("=" * 70)
 
     detail = load_books_detail()
 
-    # 娓呮礂
+    # 清洗
     df = detail.copy()
     df["pub_year_num"] = pd.to_numeric(df["pub_year"], errors="coerce")
     df["pages_num"] = pd.to_numeric(df["pages"], errors="coerce")
     df["pub_year_num"] = df["pub_year_num"].fillna(2010).astype(int)
     df["pages_num"] = df["pages_num"].fillna(300).astype(int)
-    df["author"] = df["author"].fillna("鏈煡").astype(str)
-    df["publisher"] = df["publisher"].fillna("鏈煡").astype(str)
-    df["binding"] = df["binding"].fillna("鍏朵粬").astype(str)
+    df["author"] = df["author"].fillna("未知").astype(str)
+    df["publisher"] = df["publisher"].fillna("未知").astype(str)
+    df["binding"] = df["binding"].fillna("其他").astype(str)
     df = df.dropna(subset=["rating", "votes"])
     df = df[(df["rating"] >= 1) & (df["rating"] <= 10)]
     df = df[df["votes"] >= 10]
     df["is_translation"] = (df["translator"].notna() | df["original_title"].notna()).astype(int)
     df["is_series"] = df["series"].notna().astype(int)
 
-    print(f"  鏈夋晥鏁版嵁: {len(df)} 鏉?)
+    print(f"  有效数据: {len(df)} 条")
 
     # Train/test split
     train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
     y_train = train_df["rating"].values
     y_test = test_df["rating"].values
-    print(f"  璁粌闆? {len(train_df)}, 娴嬭瘯闆? {len(test_df)}")
+    print(f"  训练集: {len(train_df)}, 测试集: {len(test_df)}")
 
     global_mean = y_train.mean()
     global_std = y_train.std()
 
-    # ===== 1. 鐜扮姸妫€鏌?=====
-    print("\n  --- 鐜扮姸妫€鏌?---")
-    print("  褰撳墠 coldstart_predictor.py 鐨?build_stats() 瀵瑰叏閲?self.df 璁＄畻缁熻閲忥紝")
-    print("  鐒跺悗 build_features() 鏄犲皠鍥炴瘡琛屻€傚洜姝?pub_avg_rating 鍜?author_avg_rating")
-    print("  閮藉寘鍚洰鏍囦功鏈韩鐨勮瘎绾?鈫?**瀛樺湪鏁版嵁娉勯湶**銆?)
-    print("  votes_log 浣跨敤璁粌闆嗗叏浣撲功鐨勭湡瀹炴姇绁ㄦ暟 鈫?瀵规柊涔?votes鈮?)涓嶅彲鐢?鈫?**鐗瑰緛娉勯湶**銆?)
+    # ===== 1. 现状检查 =====
+    print("\n  --- 现状检查 ---")
+    print("  当前 coldstart_predictor.py 的 build_stats() 对全量 self.df 计算统计量，")
+    print("  然后 build_features() 映射回每行。因此 pub_avg_rating 和 author_avg_rating")
+    print("  都包含目标书本身的评级 → **存在数据泄露**。")
+    print("  votes_log 使用训练集全体书的真实投票数 → 对新书(votes≈0)不可用 → **特征泄露**。")
 
-    # ===== 杈呭姪鍑芥暟锛歵rain-only stats锛堟帓闄よ嚜韬級 =====
+    # ===== 辅助函数：train-only stats（排除自身） =====
     def build_train_stats(train_subset):
         pub = train_subset.groupby("publisher")["rating"].agg(["mean", "count", "std"]).fillna(0)
         pub.columns = ["pub_avg", "pub_cnt", "pub_std"]
@@ -439,7 +433,7 @@ def run_experiment_c():
     pub_stats, auth_stats, bind_stats = build_train_stats(train_df)
 
     def featurize_v1(subset, pub_s, auth_s, bind_s, is_train, include_votes):
-        """鍘熷 11 鐗瑰緛 (鍏ㄩ噺缁熻锛屽惈 votes_log) 鎴栧幓鎺?votes_log"""
+        """原始 11 特征 (全量统计，含 votes_log) 或去掉 votes_log"""
         feats = {}
         feats["pub_avg_rating"] = subset["publisher"].map(pub_s["pub_avg"]).fillna(global_mean)
         feats["pub_book_count_log"] = np.log1p(subset["publisher"].map(pub_s["pub_cnt"]).fillna(1))
@@ -458,12 +452,12 @@ def run_experiment_c():
         return X, feature_names
 
     def featurize_loo(subset, train_full, pub_s_train, auth_s_train, bind_s_train):
-        """Train-only缁熻 + leave-one-out锛堟帓闄よ嚜韬級"""
-        # 瀵硅缁冮泦锛氭瀯寤烘帓闄よ嚜韬殑缁熻閲?
-        # 瀵规瘡鏈功锛屼复鏃朵粠璁粌缁熻涓噺鍘昏嚜韬?
+        """Train-only统计 + leave-one-out（排除自身）"""
+        # 对训练集：构建排除自身的统计量
+        # 对每本书，临时从训练统计中减去自身
         feats = {}
 
-        # 鍑虹増绀剧粺璁?- LOO
+        # 出版社统计 - LOO
         pub_avg_map = {}
         pub_cnt_map = {}
         pub_std_map = {}
@@ -532,26 +526,26 @@ def run_experiment_c():
         ]
         return np.array(X_rows), feature_names
 
-    # ===== 鐗堟湰1: 鍘熷11鐗瑰緛锛堝叏閲忕粺璁?+ votes_log锛夆€斺€旀敞鎰忥細杩欓噷stats涔熸槸train-only绠楃殑锛屼絾鏄犲皠鐢ㄥ叏閲?鏈夋硠闇?=====
-    pub_stats_full, auth_stats_full, bind_stats_full = build_train_stats(df)  # 鍏ㄩ噺锛?
+    # ===== 版本1: 原始11特征（全量统计 + votes_log）——注意：这里stats也是train-only算的，但映射用全量=有泄露 =====
+    pub_stats_full, auth_stats_full, bind_stats_full = build_train_stats(df)  # 全量！
     X_train_v1, feat_v1 = featurize_v1(train_df, pub_stats_full, auth_stats_full, bind_stats_full, True, True)
     X_test_v1, _ = featurize_v1(test_df, pub_stats_full, auth_stats_full, bind_stats_full, False, True)
 
-    # ===== 鐗堟湰2: 10鐗瑰緛锛堝幓鎺?votes_log锛?=====
+    # ===== 版本2: 10特征（去掉 votes_log） =====
     X_train_v2, feat_v2 = featurize_v1(train_df, pub_stats_full, auth_stats_full, bind_stats_full, True, False)
     X_test_v2, _ = featurize_v1(test_df, pub_stats_full, auth_stats_full, bind_stats_full, False, False)
 
-    # ===== 鐗堟湰3: 10鐗瑰緛 + train-only + LOO 缁熻 =====
+    # ===== 版本3: 10特征 + train-only + LOO 统计 =====
     X_train_v3, feat_v3 = featurize_loo(train_df, train_df, pub_stats, auth_stats, bind_stats)
     X_test_v3, _ = featurize_loo(test_df, train_df, pub_stats, auth_stats, bind_stats)
 
-    # ===== Baseline: 浣滆€呭潎鍊?=====
+    # ===== Baseline: 作者均值 =====
     auth_means_test = test_df["author"].map(auth_stats["auth_avg"]).fillna(global_mean).values
     rmse_auth_base = np.sqrt(mean_squared_error(y_test, auth_means_test))
     r2_auth_base = r2_score(y_test, auth_means_test)
-    print(f"\n  Baseline (浣滆€呭潎鍊?    : RMSE={rmse_auth_base:.4f}, R2={r2_auth_base:.4f}")
+    print(f"\n  Baseline (作者均值)    : RMSE={rmse_auth_base:.4f}, R2={r2_auth_base:.4f}")
 
-    # ===== 璁粌涓変釜鐗堟湰 =====
+    # ===== 训练三个版本 =====
     results_c = {}
 
     for version_name, X_tr, X_te in [
@@ -571,59 +565,58 @@ def run_experiment_c():
         print(f"  {version_name:<25s}: RMSE={rmse:.4f}, R2={r2:.4f}")
 
     lines = [
-        "## 瀹為獙 C: 鍐峰惎鍔ㄦā鍨嬫硠闇叉鏌?,
+        "## 实验 C: 冷启动模型泄露检查",
         "",
-        "### 鐜扮姸鍒嗘瀽",
+        "### 现状分析",
         "",
-        "`coldstart_predictor.py` 鐨?`build_stats()` 鍦?*鍏ㄩ噺 `self.df`** 涓婅绠?stats锛?,
-        "鐒跺悗 `build_features()` 閫愯鏄犲皠銆傝繖鎰忓懗鐫€ `pub_avg_rating` 鍜?`author_avg_rating`",
-        "閮?*鍖呭惈鐩爣涔︽湰韬殑璇勫垎** 鈫?鏍囩娉勯湶銆?,
+        "`coldstart_predictor.py` 的 `build_stats()` 在**全量 `self.df`** 上计算 stats，",
+        "然后 `build_features()` 逐行映射。这意味着 `pub_avg_rating` 和 `author_avg_rating`",
+        "都**包含目标书本身的评分** → 标签泄露。",
         "",
-        "`votes_log` 鐗瑰緛瀵圭湡瀹炴柊涔︿笉鍙敤锛坴otes鈮?锛夛紝灞炰簬鐗瑰緛娉勯湶銆?,
+        "`votes_log` 特征对真实新书不可用（votes≈0），属于特征泄露。",
         "",
-        "### 瀵规瘮瀹為獙",
+        "### 对比实验",
         "",
-        f"- 璁粌闆? {len(train_df):,} 鏉? 娴嬭瘯闆? {len(test_df):,} 鏉?,
-        "- 妯″瀷: GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42) 鈥?涓庣敓浜у喎鍚姩妯″瀷鍚岄厤缃?,
+        f"- 训练集: {len(train_df):,} 条, 测试集: {len(test_df):,} 条",
+        "- 模型: GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42) — 与生产冷启动模型同配置",
         "",
-        "| 鐗堟湰 | RMSE | R虏 |",
+        "| 版本 | RMSE | R² |",
         "|------|------|----|",
-        f"| Baseline (浣滆€呭潎鍊? | {rmse_auth_base:.4f} | {r2_auth_base:.4f} |",
-        f"| v1: 11鐗瑰緛(鍚硠闇? | {results_c['v1_11feat_leaked'][0]:.4f} | {results_c['v1_11feat_leaked'][1]:.4f} |",
-        f"| v2: 10鐗瑰緛(鍘籿otes_log) | {results_c['v2_10feat_no_votes'][0]:.4f} | {results_c['v2_10feat_no_votes'][1]:.4f} |",
-        f"| v3: 10鐗瑰緛(鍘籿otes+LOO缁熻) | {results_c['v3_10feat_trainonly'][0]:.4f} | {results_c['v3_10feat_trainonly'][1]:.4f} |",
+        f"| Baseline (作者均值) | {rmse_auth_base:.4f} | {r2_auth_base:.4f} |",
+        f"| v1: 11特征(含泄露) | {results_c['v1_11feat_leaked'][0]:.4f} | {results_c['v1_11feat_leaked'][1]:.4f} |",
+        f"| v2: 10特征(去votes_log) | {results_c['v2_10feat_no_votes'][0]:.4f} | {results_c['v2_10feat_no_votes'][1]:.4f} |",
+        f"| v3: 10特征(去votes+LOO统计) | {results_c['v3_10feat_trainonly'][0]:.4f} | {results_c['v3_10feat_trainonly'][1]:.4f} |",
         "",
-        "### 缁撹",
+        "### 结论",
         "",
-        f"- v3锛堜弗璋ㄧ増锛塕虏={results_c['v3_10feat_trainonly'][1]:.4f}锛屽姣斾綔鑰呭潎鍊?baseline R虏={r2_auth_base:.4f}",
-        f"- 宸窛 = {results_c['v3_10feat_trainonly'][1] - r2_auth_base:+.4f}",
+        f"- v3（严谨版）R²={results_c['v3_10feat_trainonly'][1]:.4f}，对比作者均值 baseline R²={r2_auth_base:.4f}",
+        f"- 差距 = {results_c['v3_10feat_trainonly'][1] - r2_auth_base:+.4f}",
     ]
 
     if results_c['v3_10feat_trainonly'][1] <= r2_auth_base:
-        lines.append("- 鈿?**妯″瀷骞舵湭鏄捐憲浼樹簬鐩存帴鏌ヤ綔鑰呭潎鍒?*锛屽缓璁瑙嗙壒寰佸伐绋嬬殑鏈夋晥鎬с€?)
+        lines.append("- ⚠ **模型并未显著优于直接查作者均分**，建议审视特征工程的有效性。")
     else:
-        lines.append("- 鉁?妯″瀷浼樹簬浣滆€呭潎鍊?baseline銆?)
+        lines.append("- ✅ 模型优于作者均值 baseline。")
 
     lines.append("")
     return "\n".join(lines), results_c
 
 
 # ============================================================================
-#  涓诲叆鍙?
+#  主入口
 # ============================================================================
 
-
 def run_experiment_e():
-    """鍩轰簬 IJCAI 鏁版嵁闆嗙殑鐪熷疄鐢ㄦ埛 Leave-One-Out 璇勪及"""
+    """Experiment E: Real user Leave-One-Out evaluation (IJCAI dataset)"""
     print("\n" + "=" * 70)
-    print("  瀹為獙 E: 鐪熷疄鐢ㄦ埛 Leave-One-Out (IJCAI)")
+    print("  Experiment E: Real User Leave-One-Out (IJCAI)")
     print("=" * 70)
 
     user_ratings_path = DATA_DIR / "processed" / "user_ratings.csv"
     if not user_ratings_path.exists():
-        msg = "  [SKIP] user_ratings.csv 涓嶅瓨鍦紝璇峰厛杩愯 src/integrate_ijcai.py"
+        msg = "[SKIP] user_ratings.csv not found. Run src/integrate_ijcai.py first."
         print(msg)
-        return "## 瀹為獙 E: SKIPPED\n\n" + msg + "\n", {}
+        return "## Experiment E: SKIPPED\n\n" + msg + "\n", {}
 
     ur = pd.read_csv(user_ratings_path, encoding="utf-8-sig")
     rec_df = pd.read_csv(MODEL_DIR / "books_for_rec.csv", encoding="utf-8-sig")
@@ -634,25 +627,26 @@ def run_experiment_e():
     user_stats = ur.groupby("user_id").agg(
         n_total=("rating", "count"),
         n_high=("rating", lambda x: (x >= 4).sum()),
-        n_rec=("in_rec", "sum"),
-        n_high_rec=("rating", lambda x: ((x >= 4) & ur.loc[x.index, "in_rec"]).sum()),
     )
+    # Count high-rated books in rec index per user
+    user_high_rec = ur[(ur["rating"] >= 4) & ur["in_rec"]].groupby("user_id").size()
+    user_stats["n_high_rec"] = user_high_rec.reindex(user_stats.index).fillna(0)
+
     valid_users = user_stats[(user_stats["n_total"] >= 10) & (user_stats["n_high_rec"] >= 5)]
     valid_user_ids = set(valid_users.index)
 
     avg_total = valid_users["n_total"].mean()
     avg_high = valid_users["n_high_rec"].mean()
-    print(f"  鏈夋晥鐢ㄦ埛: {len(valid_user_ids)} | 骞冲潎璇勫垎: {avg_total:.0f} | 骞冲潎楂樺垎鍦ㄥ簱: {avg_high:.0f}")
+    print(f"  Valid users: {len(valid_user_ids)} | avg ratings: {avg_total:.0f} | avg high-in-rec: {avg_high:.0f}")
     if len(valid_user_ids) < 50:
-        print(f"  [WARN] 鏍锋湰閲?< 50")
+        print(f"  [WARN] Too few users (< 50)")
 
     rec = load_recommender()
     nn_indices = rec.nn_indices
     id_to_idx = rec.id_to_idx
     idx_to_id = rec.idx_to_id
-    titles_arr = rec.df["title"].values.astype(str)
 
-    # Popular baseline: 鎸夋姇绁ㄦ暟鎺掑簭锛堜笉鏄?bayesian_score锛屽悗鑰呭亸鍚戝皬浼楅珮鍒嗕功锛?
+    # Popular baseline: sort by votes
     popular_ids = rec_df.nlargest(len(rec_df), "votes")["id"].tolist()
     all_ids_arr = np.array(sorted(set(int(i) for i in rec_df["id"])), dtype=np.int64)
 
@@ -675,13 +669,12 @@ def run_experiment_e():
             target = high_rated.iloc[-1]
             history = high_rated.iloc[:-1]
             target_id = int(float(target["douban_book_id"]))
-            # 鐢ㄦ埛鎵€鏈夊凡璇勫垎涔︼紙鍦?rec 绱㈠紩鍐呯殑锛?
+
+            # All books rated by this user (to exclude from baselines)
             all_rated = set(int(float(x)) for x in user_data[user_data["in_rec"]]["douban_book_id"])
             n_valid += 1
 
-            # ----- 鎺ㄨ崘鏂规硶 -----
-            # 瀵规瘡鏈巻鍙查珮鍒嗙瀛愪功锛屽彇璇ヤ功鐨?top-(K*3) NN 閭诲眳
-            # 鐢?rank 鍔犳潈 (1/rank) 浣滀负鍒嗘暟锛岃法绉嶅瓙 max-pooling锛屾渶鍚庡叏灞€ top-K
+            # ----- Recommend (max-pooled rank-weighted) -----
             candidate_scores = {}
             for _, hb in history.iterrows():
                 hid = int(float(hb["douban_book_id"]))
@@ -693,99 +686,90 @@ def run_experiment_e():
                 cnt = 0
                 for nidx in neighbors:
                     nid = idx_to_id.get(nidx)
-                    if nid == hid:
+                    if nid is None or nid == hid:
                         continue
-                    if nid is None:
-                        continue
-                    title = titles_arr[nidx]
+                    title = rec.df.iloc[nidx]["title"]
                     if title in seen_titles:
                         continue
                     seen_titles.add(title)
-                    score = 1.0 / (cnt + 1)  # rank-based score: 1/rank
+                    cnt += 1
+                    score = 1.0 / cnt  # rank-weighted
                     if nid not in candidate_scores or score > candidate_scores[nid]:
                         candidate_scores[nid] = score
-                    cnt += 1
                     if cnt >= K * 3:
                         break
-
-            top_candidates = sorted(candidate_scores.items(), key=lambda x: -x[1])[:K]
-            top_ids = set(cid for cid, _ in top_candidates)
-            recall_rec.append(1.0 if target_id in top_ids else 0.0)
+            # Sort by score, take top-K
+            top_candidates = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)[:K]
+            rec_top_set = set(cid for cid, _ in top_candidates)
+            recall_rec.append(1.0 if target_id in rec_top_set else 0.0)
 
             # ----- Random baseline -----
-            # 浠庡叏搴撻殢鏈烘娊 K 鏈紙鎺掗櫎鐢ㄦ埛宸茶瘎鍒嗭級
-            rng = np.random.RandomState(42 + n_valid)
-            eligible = all_ids_arr[~np.isin(all_ids_arr, list(all_rated))]
-            if len(eligible) < K:
-                recall_random.append(0.0)
+            # Random baseline: 5 trials average
+            eligible = [i for i in all_ids_arr if i not in all_rated]
+            rand_hits = 0
+            if len(eligible) >= K:
+                for _ in range(5):
+                    sampled = np.random.choice(eligible, size=K, replace=False)
+                    if target_id in sampled:
+                        rand_hits += 1
+                recall_random.append(rand_hits / 5.0)
             else:
-                sampled = rng.choice(eligible, size=K, replace=False)
-                recall_random.append(1.0 if target_id in set(int(s) for s in sampled) else 0.0)
+                recall_random.append(0.0)
 
             # ----- Popular baseline -----
-            # 鎸?votes 闄嶅簭鍙栧墠 K 鏈紙鎺掗櫎鐢ㄦ埛宸茶瘎鍒嗭級
-            top_pop = []
-            for pid in popular_ids:
-                if int(pid) not in all_rated:
-                    top_pop.append(int(pid))
-                    if len(top_pop) >= K:
-                        break
-            recall_pop.append(1.0 if target_id in set(top_pop) else 0.0)
+            pop_candidates = [pid for pid in popular_ids if pid not in all_rated][:K]
+            recall_pop.append(1.0 if target_id in pop_candidates else 0.0)
 
-        mean_rec = np.mean(recall_rec) if recall_rec else 0.0
-        mean_rand = np.mean(recall_random) if recall_random else 0.0
-        mean_pop = np.mean(recall_pop) if recall_pop else 0.0
-        print(f"  recommend_by_id : Recall@{K} = {mean_rec:.4f}  (n={n_valid})")
-        print(f"  Random          : Recall@{K} = {mean_rand:.4f}")
-        print(f"  Popular         : Recall@{K} = {mean_pop:.4f}")
-        results[K] = {"recommend_by_id": mean_rec, "random": mean_rand, "popular": mean_pop, "n_users": n_valid}
+        avg_rec = np.mean(recall_rec) if recall_rec else 0
+        avg_rand = np.mean(recall_random) if recall_random else 0
+        avg_pop = np.mean(recall_pop) if recall_pop else 0
+        results[K] = (avg_rec, avg_rand, avg_pop)
+        print(f"  recommend_by_id : Recall@{K} = {avg_rec:.4f}  (n={n_valid})")
+        print(f"  Random          : Recall@{K} = {avg_rand:.4f}")
+        print(f"  Popular         : Recall@{K} = {avg_pop:.4f}")
 
-    r10 = results[10]
-    r20 = results[20]
+    K10 = results.get(10, (0, 0, 0))
+    K20 = results.get(20, (0, 0, 0))
+
     lines = [
-        "## 瀹為獙 E: 鐪熷疄鐢ㄦ埛 Leave-One-Out 璇勪及 (IJCAI 鏁版嵁闆?",
+        "## 实验 E: 真实用户 Leave-One-Out 评估 (IJCAI 数据集)",
         "",
-        "> **鏁版嵁鏉ユ簮**: DTCDR (CIKM 2019) / GA-DTCDR (IJCAI 2020) 璺ㄥ煙鎺ㄨ崘鍏紑鏁版嵁闆?,
-        "> 寮曠敤: Zhu et al., CIKM 2019; Zhu et al., IJCAI 2020",
+        "> **数据来源**: DTCDR (CIKM 2019) / GA-DTCDR (IJCAI 2020) 跨域推荐公开数据集",
+        "> 引用: Zhu et al., CIKM 2019; Zhu et al., IJCAI 2020",
         "",
-        "### 鏂规硶瀛?,
+        "### 方法学",
         "",
-        "- **鐢ㄦ埛绛涢€?*: 鎬昏瘎鍒?>=10 鏉′笖 rating>=4 鐨勯珮鍒嗕功涓嚦灏?5 鏈湪鎺ㄨ崘绱㈠紩鍐?,
-        f"  (鏈€缁?{r10["n_users"]} 浜? 骞冲潎 {avg_total:.0f} 鏉¤瘎鍒? 骞冲潎 {avg_high:.0f} 鏈珮鍒嗗湪搴?",
-        "- **鐩爣涔﹂€夊彇**: 鍙栬鐢ㄦ埛 rating>=4 鐨勪功, 鎸夋椂闂存帓搴? 鐣欏嚭鏈€鍚庝竴鏈綔涓?ground-truth",
-        "- **鍊欓€夐泦鏋勯€?*: 瀵规瘡鏈巻鍙查珮鍒嗙瀛愪功, 鍚勫彇璇ヤ功鐨?top-(K*3) NN 閭诲眳,",
-        "  瀵规瘡涓€欓€変功鍙栬法绉嶅瓙鐨勬渶澶?rank-weighted 鍒嗘暟 (1/rank) 鍋?max-pooling,",
-        "  鐒跺悗鍙栧叏灞€ top-K 浣滀负鏈€缁堟帹鑽愬垪琛? 鎸囨爣涓烘爣鍑嗙殑 **Recall@K** (K 鏈帹鑽愪腑鏄惁鍛戒腑鐩爣).",
-        "- **Random 鍩虹嚎**: 浠庡叏搴撻殢鏈烘娊 K 鏈?(鎺掗櫎璇ョ敤鎴锋墍鏈夊凡璇勫垎涔?, 5 娆″钩鍧?,
-        "- **Popular 鍩虹嚎**: 鎸?votes 闄嶅簭鍙栧墠 K 鏈?(鎺掗櫎璇ョ敤鎴锋墍鏈夊凡璇勫垎涔?",
-        "  (娉? Popular 鍩虹嚎涓?0 鏄甯哥殑鈥斺€擳op20 姘歌繙鏄€婃椿鐫€銆嬨€婄孩妤兼ⅵ銆嬬瓑鍥芥皯绾х晠閿€涔? 1,595 鍚嶇敤鎴风殑涓€у寲鐩爣涔﹀嚑涔庝笉鍙兘鍛戒腑; 鏀圭敤 bayesian_score 鍒?top 鍒楄〃琚皬浼楅珮鍒嗕功鍗犳嵁, 鏇存棤鎰忎箟)",
+        f"- **用户筛选**: 总评分 >=10 条且 rating>=4 的高分书中至少 5 本在推荐索引内 (最终: {len(valid_user_ids)} 人)",
+        f"- **目标书选取**: 取该用户 rating>=4 的书, 按时间排序, 留出最后一本作为 ground-truth",
+        "- **候选集构造**: 对每本历史高分种子书各取 top-(K*3) NN 邻居, max-pooled rank-weighted 分数聚合后取全局 top-K",
+        "- **Random 基线**: 从全库随机抽 K 本 (排除该用户所有已评分书), 5 次平均",
+        "- **Popular 基线**: 按 votes 降序取前 K 本 (排除该用户所有已评分书)",
+        f"  (注: Popular 基线为 0 是正常的——Top20 永远是《活着》《红楼梦》等国民级畅销书, \u300a\u6d3b\u7740\u300b, 个性化目标几乎不可能命中)",
         "",
-        "| 鏂规硶 | Recall@10 | Recall@20 | 鐢ㄦ埛鏁?|",
+        "| 方法 | Recall@10 | Recall@20 | 用户数 |",
         "|------|-----------|-----------|--------|",
-        f"| recommend_by_id | {r10["recommend_by_id"]:.4f} | {r20["recommend_by_id"]:.4f} | {r10["n_users"]} |",
-        f"| Random | {r10["random"]:.4f} | {r20["random"]:.4f} | {r10["n_users"]} |",
-        f"| Popular | {r10["popular"]:.4f} | {r20["popular"]:.4f} | {r10["n_users"]} |",
+        f"| recommend_by_id | {K10[0]:.4f} | {K20[0]:.4f} | {n_valid} |",
+        f"| Random | {K10[1]:.4f} | {K20[1]:.4f} | {n_valid} |",
+        f"| Popular | {K10[2]:.4f} | {K20[2]:.4f} | {n_valid} |",
         "",
     ]
-
-    return "\n".join(lines), results
-
+    return "\n".join(lines), {"rec10": K10[0], "rec20": K20[0], "rand10": K10[1], "pop20": K20[2]}
 
 def main():
-    parser = argparse.ArgumentParser(description="璞嗙摚鍥句功鎺ㄨ崘绯荤粺 - 绂荤嚎璇勪及")
+    parser = argparse.ArgumentParser(description="豆瓣图书推荐系统 - 离线评估")
     parser.add_argument("--experiment", default="all",
                         choices=["all", "rec", "rating", "coldstart", "user"],
-                        help="閫夋嫨瀹為獙: all, rec, rating, coldstart")
+                        help="Select experiment: all, rec, rating, coldstart, user")
     args = parser.parse_args()
 
     start_time = time.time()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     report_parts = [
-        f"# 璞嗙摚鍥句功鎺ㄨ崘绯荤粺 鈥?绂荤嚎璇勪及鎶ュ憡",
+        f"# 豆瓣图书推荐系统 — 离线评估报告",
         f"",
-        f"**鐢熸垚鏃堕棿**: {now}",
-        f"**鏁版嵁瑙勬ā**: books_for_rec.csv 鈮?164K 琛? Books_detail.csv = 6,584 琛?,
+        f"**生成时间**: {now}",
+        f"**数据规模**: books_for_rec.csv ≈ 164K 行, Books_detail.csv = 6,584 行",
         f"",
         "---",
         "",
@@ -803,35 +787,34 @@ def main():
         part_c, _ = run_experiment_c()
         report_parts.append(part_c)
 
-    if args.experiment in ("all", "user"):
+    if args.experiment in ("all", "user", "e"):
         part_e, _ = run_experiment_e()
         report_parts.append(part_e)
 
     elapsed = time.time() - start_time
     report_parts.append(f"---")
     report_parts.append(f"")
-    report_parts.append(f"_鎬昏€楁椂: {elapsed:.1f}s_")
-    report_parts.append(f"_random_state=42 鐢ㄤ簬鎵€鏈夐殢鏈鸿繃绋媉")
+    report_parts.append(f"_总耗时: {elapsed:.1f}s_")
+    report_parts.append(f"_random_state=42 用于所有随机过程_")
 
     report_text = "\n".join(report_parts)
 
-    # 杈撳嚭鍒扮粓绔紙瀹归敊 GBK 缂栫爜锛?
+    # 输出到终端（容错 GBK 编码）
     print("\n" + "=" * 70)
-    print("  璇勪及鎶ュ憡")
+    print("  评估报告")
     print("=" * 70)
-    # 瀹夊叏杈撳嚭锛氭浛鎹㈡棤娉曠紪鐮佺殑瀛楃
+    # 安全输出：替换无法编码的字符
     for line in report_text.split("\n"):
         try:
             print(line)
         except UnicodeEncodeError:
             print(line.encode("ascii", errors="replace").decode("ascii"))
 
-    # 鍐欏叆鏂囦欢
+    # 写入文件
     report_path = REPORT_DIR / "evaluation_results.md"
     report_path.write_text(report_text, encoding="utf-8")
-    print(f"\n[鎶ュ憡淇濆瓨] {report_path}")
+    print(f"\n[报告保存] {report_path}")
 
 
 if __name__ == "__main__":
     main()
-
