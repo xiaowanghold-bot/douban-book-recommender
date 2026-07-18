@@ -1,6 +1,6 @@
-# 豆瓣图书推荐系统 — 离线评估报告
+﻿# 豆瓣图书推荐系统 — 离线评估报告
 
-**生成时间**: 2026-07-18 18:15:51
+**生成时间**: 2026-07-18 20:20:14
 **数据规模**: books_for_rec.csv ≈ 164K 行, Books_detail.csv = 6,584 行
 
 ---
@@ -41,7 +41,7 @@
 
 - 训练集: 4,992 条, 测试集: 1,248 条
 - 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)
-- 特征 (v2): price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only)
+- 特征: price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only 统计均值)
 
 | 方法 | RMSE | MAE |
 |------|------|-----|
@@ -80,7 +80,30 @@
 - 差距 = +0.1179
 - ✅ 模型优于作者均值 baseline。
 
+## 实验 E: 真实用户 Leave-One-Out 评估 (IJCAI 数据集)
+
+> **数据来源**: DTCDR (CIKM 2019) / GA-DTCDR (IJCAI 2020) 跨域推荐公开数据集
+> 引用: Zhu et al., CIKM 2019; Zhu et al., IJCAI 2020
+
+### 方法学
+
+- **用户筛选**: 总评分 >=10 条且 rating>=4 的高分书中至少 5 本在推荐索引内
+  (最终 1595 人, 平均 102 条评分, 平均 72 本高分在库)
+- **目标书选取**: 取该用户 rating>=4 的书, 按时间排序, 留出最后一本作为 ground-truth
+- **候选集构造**: 对每本历史高分种子书, 各取该书的 top-(K*3) NN 邻居,
+  对每个候选书取跨种子的最大 rank-weighted 分数 (1/rank) 做 max-pooling,
+  然后取全局 top-K 作为最终推荐列表. 指标为标准的 **Recall@K** (K 本推荐中是否命中目标).
+- **Random 基线**: 从全库随机抽 K 本 (排除该用户所有已评分书), 5 次平均
+- **Popular 基线**: 按 votes 降序取前 K 本 (排除该用户所有已评分书)
+  (注: Popular 基线为 0 是正常的——Top20 永远是《活着》《红楼梦》等国民级畅销书, 1,595 名用户的个性化目标书几乎不可能命中; 改用 bayesian_score 则 top 列表被小众高分书占据, 更无意义)
+
+| 方法 | Recall@10 | Recall@20 | 用户数 |
+|------|-----------|-----------|--------|
+| recommend_by_id | 0.0038 | 0.0094 | 1595 |
+| Random | 0.0000 | 0.0000 | 1595 |
+| Popular | 0.0000 | 0.0000 | 1595 |
+
 ---
 
-_总耗时: 113.2s_
+_总耗时: 151.0s_
 _random_state=42 用于所有随机过程_

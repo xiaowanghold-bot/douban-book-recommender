@@ -24,9 +24,14 @@
 
 ## 数据来源
 
-- 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)
-- 288,824 本图书的基础评分数据
+- 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020): 288,824 本图书基础评分
+- IJCAI 跨域推荐数据集 (DTCDR/GA-DTCDR): 227,251 条书评, 95,872 本书, 19,021 个用户标签
 - 481 个豆列 + 897 个标签
+
+### 引用
+若使用 IJCAI 数据集部分，请引用:
+- Zhu et al., "DTCDR: A Framework for Dual-Target Cross-Domain Recommendation", CIKM 2019
+- Zhu et al., "GA-DTCDR: Graph Embeddings for Cross-Domain Recommendation", IJCAI 2020
 
 ## 环境
 
