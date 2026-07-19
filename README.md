@@ -4,8 +4,8 @@
 
 **在线 Demo**: [xiaowanghold-bot-douban-book-recommender](https://xiaowanghold-bot-douban-book-recommender-appmain-epob3s.streamlit.app)
 
-![应用截图](reports/figures/screenshot_demo.png)
 ![应用截图2](reports/figures/screenshot_demo2.png)
+![应用截图](reports/figures/screenshot_demo.png)
 
 ---
 
