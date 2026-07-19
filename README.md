@@ -10,7 +10,7 @@
 
 ## 功能列表 / Features
 
-9 个页面，与 pp/main.py 一一对应：
+9 个页面，与 app/main.py 一一对应：
 
 | 页面 | 功能 |
 |------|------|
@@ -28,37 +28,36 @@
 
 ## 系统架构 / Architecture
 
-`mermaid
+```mermaid
 graph LR
     A[Douban-books-2020<br/>288K raw] --> B[data_cleaning.py<br/>去重/清洗]
     B --> C[scoring.py<br/>贝叶斯加权评分]
     C --> D[books_scored.csv<br/>174K 本]
-    
+
     D --> E[recommendation.py<br/>jieba TF-IDF + Cosine]
     D --> F[analysis.py<br/>出版社/作者统计]
     D --> G[enhancements.py<br/>RandomForest 评分预测]
-    
+
     F --> H[Streamlit App<br/>app/main.py]
     E --> H
     G --> H
-    
+
     I[Books_detail.csv<br/>6,584 本详情] --> F
     I --> G
     I --> J[coldstart_predictor.py<br/>GradientBoosting v3]
     J --> H
-    
+
     K[IJCAI Dataset<br/>DTCDR/GA-DTCDR] -->|integrate_ijcai.py| L[book_tags.json<br/>35,693 本标签]
     K -->|integrate_ijcai.py| M[user_ratings.csv<br/>真实评分]
     L --> E
     M --> N[evaluate.py<br/>实验E: 真实用户LOO]
-`
+```
 
 ---
 
 ## 评估结果 / Evaluation
 
-所有数字来自 
-eports/evaluation_results.md，均为独立测试集结果。
+所有数字来自 reports/evaluation_results.md，均为独立测试集结果。
 
 ### 1. 推荐引擎：字符 n-gram vs 语义化 TF-IDF
 
@@ -69,56 +68,66 @@ eports/evaluation_results.md，均为独立测试集结果。
 | E: 真实用户 LOO | Recall@10 | 0.0038 | **0.0100** | +163% |
 | E: 真实用户 LOO | Recall@20 | 0.0094 | **0.0206** | +119% |
 
-> 局限性说明：实验A（同系列）对两种引擎均存在系列偏向——字符版靠书名重叠，语义版靠共享作者名与标签，因此系列 Recall 会高估实际推荐能力，需结合实验E的真实用户指标综合判断。实验E受限于 IJCAI 数据集覆盖范围（1,595 名用户，≥10 条评分且≥5 本高分在推荐索引内），样本量有限。
+> 局限性说明：实验A（同系列）对两种引擎均存在系列偏向——字符版靠书名重叠，语义版靠共享作者名与标签，因此系列 Recall 会高估实际推荐能力，需结合实验E的真实用户指标综合判断。实验E受限于 IJCAI 数据集覆盖范围（1,603 名用户，>=10 条评分且>=5 本高分在推荐索引内），样本量有限。
 
-### 2. 评分预测：LabelEncoder 缺陷发现 → train-only 均值特征修复
+### 2. 评分预测：LabelEncoder 缺陷发现 -> train-only 均值特征修复
 
-问题发现：原版使用 LabelEncoder 编码 uthor/publisher（高基数类别的任意整数编码，近乎噪声），导致 RandomForest 输给作者均值基线。
+问题发现：原版使用 LabelEncoder 编码 author/publisher（高基数类别的任意整数编码，近乎噪声），导致 RandomForest 输给作者均值基线。
+
+**修复前（LabelEncoder）**：
 
 | 方法 | RMSE | MAE |
 |------|------|------|
-| 全局均值基线 | 0.6247 | 0.4989 |
-| 出版社均值基线 | 0.6159 | 0.4887 |
-| 作者均值基线 | 0.5991 | 0.4672 |
-| **修复前（LabelEncoder）** | **0.6154** | **0.4890** |
-| **修复后（train-only统计均值）** | **0.5457** | **0.4120** |
+| 全局均值基线 | 0.7115 | 0.5723 |
+| 出版社均值基线 | 0.6588 | 0.5262 |
+| 作者均值基线 | 0.5987 | 0.4553 |
+| RandomForest (LabelEncoder) | 0.6154 | 0.4890 |
+
+> RF 输给作者均值基线
+
+**修复后（train-only 统计均值）**：
+
+| 方法 | RMSE | MAE |
+|------|------|------|
+| 全局均值基线 | 0.7115 | 0.5723 |
+| 出版社均值基线 | 0.6588 | 0.5262 |
+| 作者均值基线 | 0.5987 | 0.4553 |
+| RandomForest (修复后) | 0.5457 | 0.4120 |
 
 > 修复后 RMSE 反超作者均值基线 0.599，证明模型学到了超出简单统计量的信息。
 
-### 3. 冷启动预测：双重泄露自查 → v3 修正
+### 3. 冷启动预测：双重泄露自查 -> v3 修正
 
-问题发现：(a) otes_log 特征——真正的新书 votes≈0，训练时不该见到此特征；(b) uthor_avg_rating/pub_avg_rating 等统计特征可能包含了目标书本身（数据泄露）。
+问题发现：(a) votes_log 特征——真正的新书 votes=0，训练时不该见到此特征；(b) author_avg_rating/pub_avg_rating 等统计特征包含了目标书本身（数据泄露）——统计特征含自身才是泄露主体，去 votes_log 影响甚微。
 
-| 版本 | R²（测试集） | 说明 |
+| 版本 | R-squared（测试集） | 说明 |
 |------|------|------|
 | 作者均值基线（无模型） | 0.38 | 直接输出作者均分 |
 | v1 原始 11 特征 | 0.81 | 虚高，含泄露 |
-| v2 去 votes_log（10特征） | 0.62 | 仍含统计泄露 |
+| v2 去 votes_log（10特征） | 0.80 | 去votes_log影响甚微，统计泄露仍在 |
 | **v3 去 votes_log + LOO统计（线上部署版）** | **0.50** | 诚实估计，仍显著优于基线 |
 
-> 线上部署即 v3，侧边栏指标为真实测试集 R²=0.50。
+> 线上部署即 v3，侧边栏指标为真实测试集 R-squared=0.50。
 
 ---
 
 ## 数据质量工程 / Data Quality
 
 - **多版本去重**：dedup_editions() 规范化书名（去标点/空格/全半角/卷册后缀）后按作者分组留 votes 最高版本。例：《深入理解计算机系统》两版归一。
-- **名称归一**：
-ormalize_publisher()/·
-ormalize_author() 处理繁简体、合并条目拆分、后缀剥离、30 余个变体归一。例：「東立」+「東立出版社」+「東立出版社有限公司」→ 東立出版社 44本；「钱钟书」+「钱锺书」→ 钱锺书 16本。
-- **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75）。例：新经典文化（5本/均分9.20）从第8位跌至第16位，译林出版社（206本）从33位升至11位。
+- **名称归一**：normalize_publisher()/normalize_author() 处理繁简体、合并条目拆分、后缀剥离、30 余个变体归一。例：「東立」+「東立出版社」+「東立出版社有限公司」-> 東立出版社 44本；「钱钟书」+「钱锺书」-> 钱锺书 16本。
+- **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75）。例：哈尔滨出版社（31本/均分8.64）从原始第150位升至收缩后第14位——大样本获得信任加权；中华书局（35本/均分8.99）跃居榜首。
 
 ---
 
 ## 本地运行 / Local Setup
 
-`ash
+```bash
 # 环境
 pip install -r requirements.txt
 
 # 模型产物生成（按顺序）
-python -m src.data_cleaning      # 数据清洗 → books_cleaned.csv
-python -m src.scoring             # 贝叶斯加权 → books_scored.csv
+python -m src.data_cleaning      # 数据清洗 -> books_cleaned.csv
+python -m src.scoring             # 贝叶斯加权 -> books_scored.csv
 python -m src.analysis            # 出版社/作者统计
 python -m src.recommendation      # jieba TF-IDF 向量 + NN 索引
 python -m src.enhancements        # 词云/价格/评分预测模型
@@ -129,7 +138,7 @@ streamlit run app/main.py
 
 # 测试
 pytest tests/ -v
-`
+```
 
 ---
 
@@ -151,7 +160,7 @@ pytest tests/ -v
 - Zhu et al., "DTCDR: A Framework for Dual-Target Cross-Domain Recommendation", CIKM 2019
 - Zhu et al., "GA-DTCDR: Graph Embeddings for Cross-Domain Recommendation", IJCAI 2020
 
-**研究用途说明**：本项目仅将 IJCAI 数据集用于学术研究与教学演示，不作商业用途。原始数据集部分文件（user_ratings.csv）未入库，仅保留聚合变换产物（ook_tags.json、	ag_counts.csv）。
+**研究用途说明**：本项目仅将 IJCAI 数据集用于学术研究与教学演示，不作商业用途。原始数据集部分文件（user_ratings.csv）未入库，仅保留聚合变换产物（book_tags.json、tag_counts.csv）。
 
 ---
 
@@ -161,13 +170,13 @@ data/models/ 目录下为预计算产物，因 Streamlit Cloud 部署需要而�
 
 | 文件 | 大小 | 生成脚本 |
 |------|------|------|
-| 	fidf_matrix.npz | ~120 MB | src/recommendation.py |
-| 
-n_neighbors.npz | ~20 MB | src/recommendation.py |
-| ectorizer.pkl | ~5 MB | src/recommendation.py |
-| 
-ating_predictor.pkl | ~2 MB | src/enhancements.py |
-| coldstart_model*.joblib | ~3 MB | src/coldstart_predictor.py |
+| tfidf_matrix.npz | ~7.3 MB | src/recommendation.py |
+| nn_neighbors.npz | ~80 MB | src/recommendation.py |
+| nn_neighbors.pkl | ~10 MB | src/recommendation.py |
+| vectorizer.pkl | ~1.5 MB | src/recommendation.py |
+| books_for_rec.csv | ~16 MB | src/recommendation.py |
+| rating_predictor.pkl | ~5.2 MB | src/enhancements.py |
+| coldstart_model*.joblib | ~1.1 MB (3 files) | src/coldstart_predictor.py |
 
 > 若更改特征工程或训练数据，需重新运行对应脚本生成新产物。
 
@@ -184,4 +193,4 @@ ating_predictor.pkl | ~2 MB | src/enhancements.py |
 
 ## 技术栈 / Tech Stack
 
-Python 3.12 · Streamlit · scikit-learn · jieba · pandas · plotly · matplotlib · wordcloud
+Python 3.12 . Streamlit . scikit-learn . jieba . pandas . plotly . matplotlib . wordcloud
