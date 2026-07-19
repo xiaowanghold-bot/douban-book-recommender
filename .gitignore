@@ -39,3 +39,5 @@ sl_*.txt
 data/processed/user_ratings.csv
 data/raw/douban_ijcai/
 data/models/nn_neighbors.npz
+reports/defense_package/
+reports/defense_package.zip
