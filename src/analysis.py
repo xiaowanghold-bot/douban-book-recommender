@@ -11,6 +11,7 @@ import matplotlib.font_manager as fm
 import re
 from pathlib import Path
 from src.utils import bayesian_shrink
+from src.normalize import normalize_publisher, normalize_author
 
 # 中文字体
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
@@ -80,35 +81,11 @@ class PublisherAuthorAnalyzer:
 
     @staticmethod
     def _clean_author(text):
-        if pd.isna(text) or not str(text).strip():
-            return "未知"
-        text = str(text).strip()
-        text = re.sub(r"\[.*?\]", "", text)  # 去国家标记
-        text = re.sub(r"\(.*?\)", "", text)  # 去括号
-        text = re.sub(r"（.*?）", "", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text if text else "未知"
+        return normalize_author(text)
 
     @staticmethod
     def _clean_publisher(text):
-        if pd.isna(text) or not str(text).strip():
-            return '未知'
-        text = str(text).strip()
-        # Normalize known variants
-        norm = {
-            '三联书店': '生活·读书·新知三联书店',
-            '上海三联书店': '上海三联书店',  # keep separate
-        }
-        # Handle combined publisher entries (split on space, keep first)
-        if ' ' in text or '　' in text:
-            parts = text.replace('　', ' ').split()
-            # Try to find the canonical publisher among parts
-            for part in parts:
-                part = part.strip()
-                if len(part) > 4:
-                    text = part
-                    break
-        return norm.get(text, text)
+        return normalize_publisher(text)
 
     @staticmethod
     def _extract_nationality(text):
