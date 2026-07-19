@@ -190,10 +190,12 @@ class BookRecommender:
         self.nn_model = NearestNeighbors(
             n_neighbors=n_neighbors, metric="cosine", algorithm="brute", n_jobs=-1)
         self.nn_model.fit(self.tfidf_matrix)
-        with open(self.model_dir / "nn_neighbors.npz", "wb") as f:
+        with open(self.model_dir / "nn_neighbors.pkl", "wb") as f:
             pickle.dump(self.nn_model, f)
-        return self
+        distances, indices = self.nn_model.kneighbors(self.tfidf_matrix)
+        np.savez(self.model_dir / "nn_neighbors.npz", distances=distances, indices=indices)
 
+        return self
     def _load_artifacts(self):
         self.tfidf_matrix = load_npz(self.model_dir / "tfidf_matrix.npz")
         with open(self.model_dir / "vectorizer.pkl", "rb") as f:
@@ -204,14 +206,8 @@ class BookRecommender:
             for idx, book_id in enumerate(self.df["id"]):
                 self.id_to_idx[int(book_id)] = idx
                 self.idx_to_id[idx] = int(book_id)
-        # Load NN distances/indices from npz for fast startup
-        nn_npz = self.model_dir / "nn_neighbors.npz"
+        # Load NN model (evaluate.py recomputes distances/indices on demand)
         nn_pkl = self.model_dir / "nn_neighbors.pkl"
-        if nn_npz.exists():
-            data = np.load(nn_npz, allow_pickle=True)
-            self.nn_distances = data["distances"]
-            self.nn_indices = data["indices"]
-            print(f"[NN] loaded ({self.nn_indices.shape[1]} neighbors)")
         if nn_pkl.exists():
             with open(nn_pkl, "rb") as f:
                 self.nn_model = pickle.load(f)

@@ -37,7 +37,7 @@ def load_recommender():
     models_dir = BASE_DIR / "data" / "models"
     required = [
         models_dir / "tfidf_matrix.npz",
-        models_dir / "nn_neighbors.npz",
+        models_dir / "nn_neighbors.pkl",
         models_dir / "vectorizer.pkl",
         models_dir / "books_for_rec.csv",
     ]
@@ -47,9 +47,6 @@ def load_recommender():
             st.stop()
     rec = BookRecommender()
     rec._load_artifacts()
-    nn = np.load(str(models_dir / "nn_neighbors.npz"))
-    rec.nn_distances = nn["distances"]
-    rec.nn_indices = nn["indices"]
     return rec
 
 @st.cache_data
@@ -284,7 +281,7 @@ with st.sidebar:
     st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
     st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
     st.sidebar.caption("推荐引擎: jieba 语义 TF-IDF + Cosine")
-    st.sidebar.caption("评分预测: GBR R2=0.50 ")
+    st.sidebar.caption("评分预测: RF RMSE=0.55 | 冷启动: GBR R²=0.50")
     st.sidebar.caption("江南大学 · 大创项目")
     st.sidebar.success("📁 xiaowanghold-bot/douban-book-recommender")
 # ======================================================================
@@ -881,11 +878,10 @@ elif page == "🔮 评分预测":
     with st.expander("🧠 模型信息（点击展开）", expanded=False):
         st.markdown("""
         **RandomForest 回归模型**
-        - 训练 MAE (LOO): **0.22** (留一法平均误差)
-        - 训练 R² (LOO): **0.80** (拟合优度)
-        - 5折交叉验证 R²: **0.72**
-        - 测试集 R²: **0.50** (严谨版)
-        - 10 维特征：价格 / 年份 / 页数 + 作者/出版社/装帧/翻译/系列 (v3 无 votes, train-only 统计)
+        - 独立测试集 RMSE: **0.546** (vs 作者均值基线 0.599)
+        - 独立测试集 MAE: **0.412** (vs 作者均值基线 0.455)
+        - 特征: price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only 统计均值)
+        - 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5)
         """)
 
 # ======================================================================
@@ -1022,7 +1018,7 @@ elif page == "📋 关于项目":
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
 - **内容推荐引擎**：jieba 语义 TF-IDF + 余弦相似度，融合书名/标签/作者/简介，去重同书名
 - **出版社/作者分析**：221 家出版社、878 位作者综合评价矩阵
-- **评分预测**：GradientBoosting 回归 + 冷启动评分预测 (v3: 10维LOO特征, 测试R²=0.50)
+- **评分预测**：RandomForest 回归 (RMSE 0.546, 优于作者均值基线 0.599)；冷启动：GradientBoosting v3 (10维LOO特征, 测试R²=0.50)
 
 ### 数据来源
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)

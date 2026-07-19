@@ -12,8 +12,6 @@ data/raw/
 !data/raw/Doulists_info.csv
 !data/raw/crawl_progress.txt
 
-# Models (regeneratable via src/recommendation.py)
-
 # Crawler logs
 crawler/crawl_log.txt
 crawler/crawl_error.txt
@@ -38,7 +36,6 @@ _test_*.py
 _img_test*.py
 _dbg_*.py
 _t2.py
-__pycache__/
 
 # Streamlit local logs
 sl_*.txt
@@ -48,3 +45,4 @@ sl_*.txt
 
 # IJCAI generated (from Kaggle raw data, not redistributable)
 data/processed/user_ratings.csv
+data/raw/douban_ijcai/
