@@ -116,7 +116,7 @@ def run_experiment_a():
     popular_ids = rec_df.nlargest(len(rec_df), "bayesian_score")["id"].tolist()
     all_ids_set = set(int(x) for x in rec_df["id"])
 
-    K_values = [10, 20]
+    K_values = [10, 20, 50]
     results = {}
 
     # 预计算每个查询在 NN 中的索引和它在 popular 中的排名
@@ -651,7 +651,7 @@ def run_experiment_e():
     popular_ids = rec_df.nlargest(len(rec_df), "votes")["id"].tolist()
     all_ids_arr = np.array(sorted(set(int(i) for i in rec_df["id"])), dtype=np.int64)
 
-    K_values = [10, 20]
+    K_values = [10, 20, 50]
     results = {}
 
     for K in K_values:
