@@ -172,6 +172,8 @@ genre_text_index = load_genre_index(df)
 detail_df = load_detail_data()
 descriptions = load_descriptions()
 cover_map = load_cover_map()
+pub_stats = load_pub_stats()
+auth_stats = load_author_stats()
 
 # ========== 工具函数 ==========
 def get_detail_info(book_id):
@@ -361,7 +363,7 @@ if page == "🏠 首页":
         ("📕", "{0:,}".format(len(df)), "收录图书", "原始数据 288,824"),
         ("⭐", "8.1", "平均评分", "最高 10.0"),
         ("👥", "{0:,}".format((df["votes"]>=10000).sum()), "评价过万", "过千 {0:,}".format((df["votes"]>=1000).sum())),
-        ("🏢", "221", "出版社", "878 位作者"),
+        ("🏢", str(len(pub_stats)) if pub_stats is not None else "?", "出版社", f"{len(auth_stats) if auth_stats is not None else '?'} 位作者"),
         ("📈", "{0:,}".format(len(rec.id_to_idx)), "推荐引擎", "30 近邻/本"),
         ("📝", "{0:,}".format(len(descriptions)), "图书简介", "封面 {0:,}张".format(len(cover_map))),
     ]
@@ -514,7 +516,7 @@ if page == "🏠 首页":
     nav_data = [
         (fc1, "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
         (fc2, "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
-        (fc3, "🏢", "出版社与作者", "221社+878位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
+        (fc3, "🏢", "出版社与作者", f"{len(pub_stats) if pub_stats is not None else "?"}社+{len(auth_stats) if auth_stats is not None else "?"}位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
         (fc4, "🔮", "评分预测", "R²=0.50", "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
     ]
     for col, icon, title, desc, c1, c2, target, btn_text, btn_key in nav_data:
@@ -1010,19 +1012,19 @@ elif page == "🏷️ 标签浏览":
 
 elif page == "📋 关于项目":
     st.title("📋 关于项目")
-    st.markdown("""
+    st.markdown(f"""
 ## 豆瓣图书评价与推荐系统
 **江南大学大学生创新训练计划项目**
 
 ### 技术方案
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
 - **内容推荐引擎**：jieba 语义 TF-IDF + 余弦相似度，融合书名/标签/作者/简介，去重同书名
-- **出版社/作者分析**：221 家出版社、878 位作者综合评价矩阵
+- **出版社/作者分析**：{len(pub_stats) if pub_stats is not None else "?"} 家出版社、{len(auth_stats) if auth_stats is not None else "?"} 位作者综合评价矩阵
 - **评分预测**：RandomForest 回归 (RMSE 0.546, 优于作者均值基线 0.599)；冷启动：GradientBoosting v3 (10维LOO特征, 测试R²=0.50)
 
 ### 数据来源
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)
-- 288,824 本基础数据 + 6,575 本爬虫详细信息
+- 288,824 本基础数据 + {len(detail_df[detail_df["crawl_status"]=="success"]) if detail_df is not None else "?"} 本爬虫详细信息
 - 481 个豆列 + 897 个标签
 
 ### 技术栈
