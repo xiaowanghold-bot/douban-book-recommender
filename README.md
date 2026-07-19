@@ -115,7 +115,7 @@ graph LR
 
 - **多版本去重**：dedup_editions() 规范化书名（去标点/空格/全半角/卷册后缀）后按作者分组留 votes 最高版本。例：《深入理解计算机系统》两版归一。
 - **名称归一**：normalize_publisher()/normalize_author() 处理繁简体、合并条目拆分、后缀剥离、30 余个变体归一。例：「東立」+「東立出版社」+「東立出版社有限公司」-> 東立出版社 44本；「钱钟书」+「钱锺书」-> 钱锺书 16本。
-- **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75）。例：哈尔滨出版社（31本/均分8.64）从原始第150位升至收缩后第14位——大样本获得信任加权；中华书局（35本/均分8.99）跃居榜首。
+- **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75=7.0）。例：新經典文化（5本/均分9.20）原始第31位 → 收缩后第8位；吉林出版集团（15本/均分8.37）原始第243位 → 收缩后第105位。m 越大收缩越强：若 m=9，新經典文化降至第10位。
 
 ---
 
@@ -171,15 +171,13 @@ data/models/ 目录下为预计算产物，因 Streamlit Cloud 部署需要而�
 | 文件 | 大小 | 生成脚本 |
 |------|------|------|
 | tfidf_matrix.npz | ~7.3 MB | src/recommendation.py |
-| nn_neighbors.npz | ~80 MB | src/recommendation.py |
 | nn_neighbors.pkl | ~10 MB | src/recommendation.py |
 | vectorizer.pkl | ~1.5 MB | src/recommendation.py |
 | books_for_rec.csv | ~16 MB | src/recommendation.py |
 | rating_predictor.pkl | ~5.2 MB | src/enhancements.py |
 | coldstart_model*.joblib | ~1.1 MB (3 files) | src/coldstart_predictor.py |
 
-> 若更改特征工程或训练数据，需重新运行对应脚本生成新产物。
-
+> nn_neighbors.npz（~80 MB，仅离线评估使用）不入库，运行 python -m src.recommendation 生成。若更改特征工程或训练数据，需重新运行对应脚本生成新产物。
 ---
 
 ## 未来工作 / Future Work

@@ -4,27 +4,22 @@ __pycache__/
 *.pyc
 *.pyo
 .ipynb_checkpoints/
-
 # Raw data (re-downloadable)
 data/raw/
 !data/raw/Books_detail.csv
 !data/raw/Tags_info.csv
 !data/raw/Doulists_info.csv
 !data/raw/crawl_progress.txt
-
 # Crawler logs
 crawler/crawl_log.txt
 crawler/crawl_error.txt
 crawler/test_*.py
-
 # IDE
 .vscode/
 .idea/
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Build
 *.egg-info/
 dist/
@@ -36,13 +31,11 @@ _test_*.py
 _img_test*.py
 _dbg_*.py
 _t2.py
-
 # Streamlit local logs
 sl_*.txt
-
 # Streamlit secrets
 .streamlit/secrets.toml
-
 # IJCAI generated (from Kaggle raw data, not redistributable)
 data/processed/user_ratings.csv
 data/raw/douban_ijcai/
+data/models/nn_neighbors.npz

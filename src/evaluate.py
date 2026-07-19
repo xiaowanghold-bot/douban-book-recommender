@@ -41,6 +41,9 @@ def load_recommender():
     """Load BookRecommender with pre-built NN index"""
     sys.path.insert(0, str(ROOT))
     from src.recommendation import BookRecommender
+    npz_path = ROOT / "data" / "models" / "nn_neighbors.npz"
+    if not npz_path.exists():
+        print("[提示] nn_neighbors.npz 不存在，将在内存中重新计算。可运行 python -m src.recommendation 预生成。")
     rec = BookRecommender()
     rec._load_artifacts()
     if not hasattr(rec, 'nn_indices') or rec.nn_indices is None:
