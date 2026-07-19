@@ -82,7 +82,7 @@ def bayesian_shrink(avg, n, C, m):
         score = (n/(n+m))*avg + (m/(n+m))*C
 
     n = group sample size (e.g., publisher book count)
-    m = median of all group sizes (controls shrinkage strength)
+    m = P75 of all group sizes (stronger shrinkage than median)
     C = global mean rating
     """
     import numpy as np

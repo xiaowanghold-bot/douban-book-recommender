@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import pandas as pd
 """
 流派搜索模块 - 关键词匹配 + 评分排序
 """
@@ -89,7 +90,7 @@ def search_books_by_genre(genre_name, df, text_index, top_n=30, min_votes=10):
                     "bayesian_score": row.get("bayesian_score", 0),
                     "similarity": row["similarity"],
                 })
-            return results[:top_n]
+            return pd.DataFrame(results[:top_n]) if results else pd.DataFrame()
         elif not semantic_results.empty:
             # 语义结果 <5 条，保留并补充
             for _, row in semantic_results.iterrows():

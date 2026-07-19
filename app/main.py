@@ -958,6 +958,7 @@ elif page == "🏷️ 标签浏览":
                 sg, df, genre_text_index,
                 top_n=30, min_votes=30
             )
+        genre_results = dedup_editions(genre_results) if not genre_results.empty else genre_results
 
         if genre_results.empty:
             st.warning(f"未找到「{sg}」相关的图书，请尝试其他流派")

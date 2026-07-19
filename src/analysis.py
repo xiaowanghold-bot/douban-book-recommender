@@ -124,7 +124,7 @@ class PublisherAuthorAnalyzer:
 
         # 综合评分 (贝叶斯收缩，与图书排行榜一致)
         C = pub_stats["avg_rating"].mean()
-        m = pub_stats["book_count"].median()
+        m = pub_stats["book_count"].quantile(0.75)  # P75 for stronger shrinkage
         pub_stats["pub_score"] = bayesian_shrink(
             pub_stats["avg_rating"].values,
             pub_stats["book_count"].values,
@@ -167,7 +167,7 @@ class PublisherAuthorAnalyzer:
 
         # 作者综合评分 (贝叶斯收缩，与图书排行榜一致)
         C = author_stats["avg_rating"].mean()
-        m = author_stats["book_count"].median()
+        m = author_stats["book_count"].quantile(0.75)  # P75 for stronger shrinkage
         author_stats["author_score"] = bayesian_shrink(
             author_stats["avg_rating"].values,
             author_stats["book_count"].values,
