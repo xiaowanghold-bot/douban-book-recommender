@@ -74,3 +74,19 @@ def dedup_editions(df):
     d = d.sort_values("votes", ascending=False).drop_duplicates(subset=["_ntitle"], keep="first")
     d = d.drop(columns=["_ntitle"])
     return d
+
+def bayesian_shrink(avg, n, C, m):
+    """Bayesian shrinkage: pull group mean toward global mean.
+
+    Formula (same structure as book Bayesian score):
+        score = (n/(n+m))*avg + (m/(n+m))*C
+
+    n = group sample size (e.g., publisher book count)
+    m = median of all group sizes (controls shrinkage strength)
+    C = global mean rating
+    """
+    import numpy as np
+    n = np.asarray(n, dtype=float)
+    avg = np.asarray(avg, dtype=float)
+    return (n / (n + m)) * avg + (m / (n + m)) * C
+

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import re
 from pathlib import Path
+from src.utils import bayesian_shrink
 
 # 中文字体
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
@@ -121,12 +122,13 @@ class PublisherAuthorAnalyzer:
         # 过滤
         pub_stats = pub_stats[pub_stats["book_count"] >= min_books].copy()
 
-        # 综合评分
-        C = pub_stats["avg_bayesian"].mean()
+        # 综合评分 (贝叶斯收缩，与图书排行榜一致)
+        C = pub_stats["avg_rating"].mean()
         m = pub_stats["book_count"].median()
-        pub_stats["pub_score"] = (
-            (pub_stats["book_count"] / (pub_stats["book_count"] + m)) * pub_stats["avg_bayesian"] +
-            (m / (pub_stats["book_count"] + m)) * C
+        pub_stats["pub_score"] = bayesian_shrink(
+            pub_stats["avg_rating"].values,
+            pub_stats["book_count"].values,
+            C, m
         )
 
         # 质量等级
@@ -163,12 +165,13 @@ class PublisherAuthorAnalyzer:
 
         author_stats = author_stats[author_stats["book_count"] >= min_books].copy()
 
-        # 作者综合评分
-        C = author_stats["avg_bayesian"].mean()
+        # 作者综合评分 (贝叶斯收缩，与图书排行榜一致)
+        C = author_stats["avg_rating"].mean()
         m = author_stats["book_count"].median()
-        author_stats["author_score"] = (
-            (author_stats["book_count"] / (author_stats["book_count"] + m)) * author_stats["avg_bayesian"] +
-            (m / (author_stats["book_count"] + m)) * C
+        author_stats["author_score"] = bayesian_shrink(
+            author_stats["avg_rating"].values,
+            author_stats["book_count"].values,
+            C, m
         )
 
         # 影响力 = 综合评分 * log(总评价人数+1)
@@ -221,7 +224,8 @@ class PublisherAuthorAnalyzer:
         ax.set_yticks(range(len(top15)))
         ax.set_yticklabels([f"{n[:16]} ({int(c)}本)" for n, c in
                             zip(top15.index, top15["book_count"])], fontsize=9)
-        ax.set_xlabel("综合评分")
+        ax.set_xlabel("综合评分 (贝叶斯)")
+        ax.set_xlim(8.0, top15["pub_score"].max())
         ax.set_title("出版社综合评分 Top 15")
         for i, (_, row) in enumerate(top15.iterrows()):
             ax.text(row["pub_score"] + 0.002, i,

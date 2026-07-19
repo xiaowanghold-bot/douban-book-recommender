@@ -395,7 +395,7 @@ if page == "🏠 首页":
                 except ValueError:
                     pass
 
-    df_with_covers = df[df["id"].isin(cover_ids_in_dir) & (df["votes"] >= 100)]
+    df_with_covers = df[df["id"].isin(cover_ids_in_dir) & (df["votes"] >= 5000)]
     if len(df_with_covers) < 24:
         # Supplement with top books even without covers
         extra = df[~df["id"].isin(cover_ids_in_dir)].nlargest(24 - len(df_with_covers), "bayesian_score")
@@ -751,6 +751,7 @@ elif page == "🔍 搜书推荐":
 elif page == "🏢 出版社与作者":
     st.title("🏢 出版社与作者分析")
     st.markdown("*基于爬虫获取的 6,575 本高分图书详细信息*")
+    st.caption("综合评分采用与图书排行榜一致的贝叶斯收缩，避免小样本出版社/作者因少量高分书虚高。")
 
     pub_stats = load_pub_stats()
     if pub_stats is not None:
@@ -759,11 +760,11 @@ elif page == "🏢 出版社与作者":
         c1.metric("出版社总数", len(pub_stats))
         c2.metric("平均每社图书", "{0:.1f} 本".format(pub_stats["book_count"].mean()))
         tp = pub_stats.head(15)[["book_count", "avg_rating", "pub_score"]]
-        tp.columns = ["图书数量", "平均评分", "综合评分"]
+        tp.columns = ["图书数量", "平均评分", "综合评分(贝叶斯)"]
         tp.index = ["{0}. {1}".format(i+1, n) for i, n in enumerate(tp.index)]
         st.dataframe(
-            tp.style.format({"平均评分": "{:.2f}", "综合评分": "{:.4f}", "图书数量": "{:.0f}"})
-            .background_gradient(subset=["综合评分"], cmap="YlOrRd"),
+            tp.style.format({"平均评分": "{:.2f}", "综合评分(贝叶斯)": "{:.4f}", "图书数量": "{:.0f}"})
+            .background_gradient(subset=["综合评分(贝叶斯)"], cmap="YlOrRd"),
             use_container_width=True,
         )
         if (FIG_DIR / "10_publisher_matrix.png").exists():
@@ -778,11 +779,11 @@ elif page == "🏢 出版社与作者":
         c2.metric("中国作者", int((auth_stats["nationality"] == "中国").sum()))
         c3.metric("外国作者", int((auth_stats["nationality"] != "中国").sum()))
         ta = auth_stats.head(15)[["book_count", "nationality", "avg_rating", "influence"]]
-        ta.columns = ["图书数量", "国籍", "平均评分", "影响力"]
+        ta.columns = ["图书数量", "国籍", "平均评分", "影响力(贝叶斯)"]
         ta.index = ["{0}. {1}".format(i+1, n) for i, n in enumerate(ta.index)]
         st.dataframe(
-            ta.style.format({"平均评分": "{:.2f}", "影响力": "{:.1f}", "图书数量": "{:.0f}"})
-            .background_gradient(subset=["影响力"], cmap="YlOrRd"),
+            ta.style.format({"平均评分": "{:.2f}", "影响力(贝叶斯)": "{:.1f}", "图书数量": "{:.0f}"})
+            .background_gradient(subset=["影响力(贝叶斯)"], cmap="YlOrRd"),
             use_container_width=True,
         )
         if (FIG_DIR / "11_author_influence.png").exists():

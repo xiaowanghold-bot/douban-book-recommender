@@ -34,7 +34,7 @@ def show(csp):
         pub_year = st.slider("出版年份", 1900, 2030, 2025, key="cs_year")
         pages = st.slider("预计页数", 50, 2000, 300, step=10, key="cs_pages")
         binding = st.selectbox("装帧", ["平装", "精装", "其他"], key="cs_binding")
-        votes_est = st.slider("预计评价人数", 10, 500000, 5000, step=100, key="cs_votes",
+        votes_est = st.slider("预计评价人数 (仅参考，v3模型不参与预测)", 10, 500000, 5000, step=100, key="cs_votes",
                               help="预估的评分人数")
 
     is_translation = st.checkbox("📖 翻译作品（有译者或原版书名）", key="cs_trans")
