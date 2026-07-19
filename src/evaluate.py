@@ -745,7 +745,7 @@ def run_experiment_e():
         "- **候选集构造**: 对每本历史高分种子书各取 top-(K*3) NN 邻居, max-pooled rank-weighted 分数聚合后取全局 top-K",
         "- **Random 基线**: 从全库随机抽 K 本 (排除该用户所有已评分书), 5 次平均",
         "- **Popular 基线**: 按 votes 降序取前 K 本 (排除该用户所有已评分书)",
-        f"  (注: Popular 基线为 0 是正常的——Top20 永远是《活着》《红楼梦》等国民级畅销书, \u300a\u6d3b\u7740\u300b, 个性化目标几乎不可能命中)",
+        f"  (注: Popular 基线为 0 是正常的——Top20 永远是《活着》《红楼梦》等国民级畅销书, 个性化目标几乎不可能命中)",
         "",
         "| 方法 | Recall@10 | Recall@20 | 用户数 |",
         "|------|-----------|-----------|--------|",
@@ -813,6 +813,16 @@ def main():
 
     # 写入文件
     report_path = REPORT_DIR / "evaluation_results.md"
+
+    # 单实验运行时备份原文件（防止覆盖手动维护的章节如语义化对比）
+    if args.experiment != "all" and report_path.exists():
+        import shutil
+        bak_path = report_path.with_suffix(".md.bak")
+        shutil.copy2(report_path, bak_path)
+        print(f"\n[备份] 单实验模式: 原报告已备份至 {bak_path}")
+        print("[警告] 仅生成了所选实验章节，报告其余部分（如语义化对比）需手动恢复。")
+        print("[建议] 运行 python -m src.evaluate --experiment all 生成完整报告。")
+
     report_path.write_text(report_text, encoding="utf-8")
     print(f"\n[报告保存] {report_path}")
 
