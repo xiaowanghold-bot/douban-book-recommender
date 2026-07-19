@@ -101,10 +101,9 @@ def search_books_by_genre(genre_name, df, text_index, top_n=30, min_votes=10):
                     "bayesian_score": row.get("bayesian_score", 0),
                     "similarity": row["similarity"],
                 })
-            existing_ids = set(r["id"] for r in results)
+            set(r["id"] for r in results)
     except Exception as e:
         print(f"[genre_search] 语义搜索失败, 回退到关键词: {e}")
-        existing_ids = set()
     
     # Fallback: GENRE_KEYWORDS 关键词匹配 (仅在语义结果不足时补充)
-    keywords = GENRE_KEYWORDS.get(genre_name, [genre_name])
+    GENRE_KEYWORDS.get(genre_name, [genre_name])

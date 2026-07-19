@@ -101,7 +101,6 @@ def run_experiment_a():
     # 加载推荐引擎 + 预计算 NN
     rec = load_recommender()
     nn_indices = rec.nn_indices  # shape: (n_books, n_neighbors)
-    nn_distances = rec.nn_distances
 
     # book_id -> matrix_idx 映射
     id_to_idx = rec.id_to_idx
@@ -455,7 +454,6 @@ def run_experiment_c():
         """Train-only统计 + leave-one-out（排除自身）"""
         # 对训练集：构建排除自身的统计量
         # 对每本书，临时从训练统计中减去自身
-        feats = {}
 
         # 出版社统计 - LOO
         pub_avg_map = {}

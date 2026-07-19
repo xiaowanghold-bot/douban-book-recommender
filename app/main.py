@@ -83,19 +83,16 @@ def load_predictor():
         return None
     with open(p, "rb") as f:
         data = pickle.load(f)
-    # Wrap dict into a callable object
+    # Wrap dict into a callable object (v2: train-only means, no LabelEncoder)
     class PredictorWrapper:
         def __init__(self, data):
             self.model = data["model"]
             self.encoders = data["encoders"]
             self.feature_names = data["feature_names"]
             self.metrics = data["metrics"]
-            # Load detail data for encoder fallback
-            import pandas as pd
-            det_path = BASE_DIR / "data" / "raw" / "Books_detail.csv"
-            self.df = pd.read_csv(det_path, encoding="utf-8-sig") if det_path.exists() else None
         
         def predict(self, price, year, pages, votes, author="未知", publisher="未知", binding="平装"):
+            """v2: train-only means (author_mean/publisher_mean/binding_mean). fallback to global_mean."""
             import re, numpy as np
             features = {}
             features["price"] = float(price)
@@ -103,18 +100,18 @@ def load_predictor():
             features["pages"] = float(pages)
             features["votes_log"] = np.log1p(float(votes))
             
-            author_clean = re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(author)).strip()[:30]
+            author_clean = re.sub(r"[.*?]|(.*?)|（.*?）", "", str(author)).strip()[:30]
             publisher_clean = str(publisher).strip()[:20]
             binding_type = "平装" if "平装" in str(binding) else ("精装" if "精装" in str(binding) else "其他")
             
-            for col, val in [("author_clean", author_clean),
-                             ("publisher_clean", publisher_clean),
-                             ("binding_type", binding_type)]:
-                encoder = self.encoders[col]
-                try:
-                    features[col] = float(encoder.transform([val])[0])
-                except ValueError:
-                    features[col] = 0.0
+            gm = self.encoders.get("global_mean", 8.0)
+            author_mean = self.encoders.get("author_means", {}).get(author_clean, gm)
+            publisher_mean = self.encoders.get("publisher_means", {}).get(publisher_clean, gm)
+            binding_mean = self.encoders.get("binding_means", {}).get(binding_type, gm)
+            
+            features["author_mean"] = float(author_mean)
+            features["publisher_mean"] = float(publisher_mean)
+            features["binding_mean"] = float(binding_mean)
             
             X = np.array([[features[n] for n in self.feature_names]])
             return float(self.model.predict(X)[0])
