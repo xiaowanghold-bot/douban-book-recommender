@@ -92,8 +92,23 @@ class PublisherAuthorAnalyzer:
     @staticmethod
     def _clean_publisher(text):
         if pd.isna(text) or not str(text).strip():
-            return "未知"
-        return str(text).strip()
+            return '未知'
+        text = str(text).strip()
+        # Normalize known variants
+        norm = {
+            '三联书店': '生活·读书·新知三联书店',
+            '上海三联书店': '上海三联书店',  # keep separate
+        }
+        # Handle combined publisher entries (split on space, keep first)
+        if ' ' in text or '　' in text:
+            parts = text.replace('　', ' ').split()
+            # Try to find the canonical publisher among parts
+            for part in parts:
+                part = part.strip()
+                if len(part) > 4:
+                    text = part
+                    break
+        return norm.get(text, text)
 
     @staticmethod
     def _extract_nationality(text):

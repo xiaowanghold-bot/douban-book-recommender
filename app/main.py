@@ -751,7 +751,7 @@ elif page == "🔍 搜书推荐":
 elif page == "🏢 出版社与作者":
     st.title("🏢 出版社与作者分析")
     st.markdown("*基于爬虫获取的 6,575 本高分图书详细信息*")
-    st.caption("综合评分采用与图书排行榜一致的贝叶斯收缩，避免小样本出版社/作者因少量高分书虚高。")
+    st.caption("综合评分采用与图书排行榜一致的贝叶斯收缩(m=P75)，避免小样本出版社/作者因少量高分书虚高。")
 
     pub_stats = load_pub_stats()
     if pub_stats is not None:
