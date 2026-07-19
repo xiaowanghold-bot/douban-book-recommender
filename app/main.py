@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from recommendation import BookRecommender
 from components import render_cover, render_book_detail, cover_to_base64
+from utils import dedup_editions
 from genre_search import build_genre_search_index, search_books_by_genre, GENRE_GROUPS
 from coldstart_page import show as show_coldstart
 
@@ -286,7 +287,7 @@ with st.sidebar:
     st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
     st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
     st.sidebar.caption("推荐引擎: jieba 语义 TF-IDF + Cosine")
-    st.sidebar.caption("评分预测: GBR R2=0.50 | 冷启动: LOO MAE=0.22")
+    st.sidebar.caption("评分预测: GBR R2=0.50 ")
     st.sidebar.caption("江南大学 · 大创项目")
     st.sidebar.success("📁 xiaowanghold-bot/douban-book-recommender")
 # ======================================================================
@@ -444,7 +445,7 @@ if page == "🏠 首页":
             book = top_cover_books.iloc[i]
             bid = int(book["id"])
             t = str(book["title"])[:10]
-            stars = chr(9733) * int(book["rating"]/2) + chr(9734) * (5-int(book["rating"]/2))
+            stars = chr(9733) * round(book["rating"]/2) + chr(9734) * (5-round(book["rating"]/2))
             is_sel = (st.session_state.home_detail_bid == bid)
             highlight = 'border: 3px solid #667eea;' if is_sel else ''
             
@@ -552,7 +553,8 @@ elif page == "🏆 排行榜":
         st.caption("💡 贝叶斯评分 = (v/(v+m))×R + (m/(v+m))×C")
         st.caption("C=全库均值 | m=中位数评价人数")
 
-    top = df[df["votes"] >= min_votes].nlargest(top_n, "bayesian_score")
+    top_raw = df[df["votes"] >= min_votes].nlargest(top_n, "bayesian_score")
+    top = dedup_editions(top_raw)
 
     tab1, tab2 = st.tabs(["📊 可视化排名", "📋 数据表格"])
 
@@ -633,7 +635,7 @@ elif page == "🏆 排行榜":
         sc1.metric("全库均值 C", f"{C:.3f}")
         sc2.metric("Top10 平均", f"{top.head(10)['rating'].mean():.1f}")
         sc3.metric("Top10 评价中位数", f"{int(top.head(10)['votes'].median()):,}")
-        sc4.metric("符合条件图书", f"{len(top):,} 本")
+        sc4.metric("符合条件图书 (votes>={min_votes})", f"{len(top):,} 本")
 
     with tab2:
         disp = top[["title", "rating", "votes", "bayesian_score"]].copy()
@@ -885,7 +887,7 @@ elif page == "🔮 评分预测":
         - 训练 R² (LOO): **0.80** (拟合优度)
         - 5折交叉验证 R²: **0.72**
         - 测试集 R²: **0.50** (严谨版)
-        - 7 维特征：价格 / 年份 / 页数 / 评价人数 + 作者 / 出版社 / 装帧
+        - 10 维特征：价格 / 年份 / 页数 + 作者/出版社/装帧/翻译/系列 (v3 无 votes, train-only 统计)
         """)
 
 # ======================================================================
@@ -1009,7 +1011,7 @@ elif page == "🏷️ 标签浏览":
             st.rerun()
 
     st.markdown("---")
-    st.caption("💡 提示：流派搜索通过匹配书名与简介中的关键词来查找相关图书，结果按匹配度和评分综合排序。")
+    st.caption("💡 提示：流派搜索基于真实豆瓣用户标签 + 语义搜索来查找相关图书，结果按匹配度和评分综合排序。")
 
 elif page == "📋 关于项目":
     st.title("📋 关于项目")

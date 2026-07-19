@@ -51,3 +51,26 @@ def setup_chinese_font():
     matplotlib.rcParams["font.family"] = "sans-serif"
     matplotlib.rcParams["axes.unicode_minus"] = False
     return None
+
+
+def dedup_editions(df):
+    """Remove duplicate editions: normalize title + author group, keep most voted."""
+    import re, pandas as pd
+    if df is None or df.empty:
+        return df
+    d = df.copy()
+    # Normalize title: remove punctuation, fullwidth chars, volume suffixes
+    def _norm(s):
+        s = str(s).strip()
+        s = re.sub(r"\uff08.*?\uff09|\（.*?\）|\(.*?\)", "", s)  # remove parentheticals
+        s = re.sub(r"[\u3000-\u303f\uff00-\uffef]", "", s)  # fullwidth
+        s = re.sub(r"[,\.\uff0c\u3001\uff1b;:!\uff01\?\uff1f\u300a\u300b\u300c\u300d]", "", s)
+        s = re.sub(r"\s+", "", s)  # spaces
+        s = re.sub(r"(\u4e0a|\u4e0b|\u5168|\u5408|\u5957\u88c5|\u7cbe\u88c5|\u5178\u85cf|\u7eaa\u5ff5|\u7b2c[\u4e00-\u4e5d\u5341\u3007]+[\u5377\u518c\u90e8\u96c6\u7248]|\u2160+|\u2161+|I+)$", "", s)
+        s = re.sub(r"\(.*?\)", "", s)
+        return s[:30]
+    d["_ntitle"] = d["title"].apply(_norm)
+    # Keep highest votes per normalized title
+    d = d.sort_values("votes", ascending=False).drop_duplicates(subset=["_ntitle"], keep="first")
+    d = d.drop(columns=["_ntitle"])
+    return d
