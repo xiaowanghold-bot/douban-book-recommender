@@ -1,8 +1,9 @@
 """Unit test for bayesian_shrink."""
 import sys
 import os
+import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from utils import bayesian_shrink
+from utils import bayesian_shrink, dedup_editions
 
 def test_bayesian_shrink_small_vs_large():
     """Small sample high avg should rank below large sample slightly lower avg."""
@@ -31,3 +32,33 @@ def test_bayesian_shrink_array_input():
     import numpy as np
     scores = bayesian_shrink(np.array([9.3, 8.99]), np.array([4, 35]), 8.21, 9)
     assert scores[1] > scores[0]
+
+
+def test_dedup_editions_collapses_explicit_edition_markers():
+    books = pd.DataFrame(
+        [
+            {"title": "深入理解计算机系统", "votes": 100},
+            {"title": "深入理解计算机系统（原书第3版）", "votes": 500},
+        ]
+    )
+
+    result = dedup_editions(books)
+
+    assert result["title"].tolist() == ["深入理解计算机系统（原书第3版）"]
+
+
+def test_dedup_editions_preserves_distinct_volumes_and_parts():
+    books = pd.DataFrame(
+        [
+            {"title": "三体Ⅱ", "votes": 500},
+            {"title": "三体Ⅲ", "votes": 400},
+            {"title": "TCP/IP详解（卷1）", "votes": 300},
+            {"title": "TCP/IP详解（卷2）", "votes": 200},
+            {"title": "故事（上册）", "votes": 100},
+            {"title": "故事（下册）", "votes": 90},
+        ]
+    )
+
+    result = dedup_editions(books)
+
+    assert set(result["title"]) == set(books["title"])

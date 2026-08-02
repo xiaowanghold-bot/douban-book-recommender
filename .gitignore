@@ -24,6 +24,7 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+.codex-tmp/
 *.log
 crawl_*.txt
 _debug.py
@@ -41,3 +42,6 @@ data/raw/douban_ijcai/
 data/models/nn_neighbors.npz
 reports/defense_package/
 reports/defense_package.zip
+
+# Local defense deliverables (do not upload)
+deliverables/大创答辩/

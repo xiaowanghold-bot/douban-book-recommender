@@ -4,7 +4,7 @@
 
 Features:
 - Publisher平均评分、作者平均评分等统计特征
-- GradientBoostingRegressor + 分位数回归置信区间
+- GradientBoostingRegressor + 分位数回归预测区间
 - 余弦相似度检索最相似书籍
 """
 import pandas as pd

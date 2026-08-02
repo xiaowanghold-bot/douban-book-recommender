@@ -56,8 +56,9 @@ if __name__ == "__main__":
         print(f"  {m:>5}  {top1:<22} {overlap:>8} {low_vote:>10}")
         scan[m] = {"overlap": overlap, "low_vote": low_vote}
     
-    # === m参数优化 ===
-    print("\n=== m参数优化（评价人数中位数法）===")
+    # === m参数确定 ===
+    # 这里采用可解释的领域规则，而不是声称在独立验证集上求得“最优值”。
+    print("\n=== m参数确定（高分图书评价人数中位数规则）===")
     high_rated = df[df["rating"] >= 8]
     m_median = int(high_rated["votes"].median())
     p25 = int(high_rated["votes"].quantile(0.25))
@@ -74,7 +75,7 @@ if __name__ == "__main__":
     m_sorted = sorted(scan.keys())
     axes[0].plot(m_sorted, [scan[m]["overlap"] for m in m_sorted],
                  "o-", color="#4C72B0", linewidth=2, markersize=6)
-    axes[0].axvline(best_m, color="red", linestyle="--", label=f"最优 m={best_m}")
+    axes[0].axvline(best_m, color="red", linestyle="--", label=f"采用 m={best_m}")
     axes[0].set_xlabel("m 参数值")
     axes[0].set_ylabel("Top10 重叠数")
     axes[0].set_title("m 参数 vs Top10 排名稳定性")
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     
     axes[1].plot(m_sorted, [scan[m]["low_vote"] for m in m_sorted],
                  "s-", color="#55A868", linewidth=2, markersize=6)
-    axes[1].axvline(best_m, color="red", linestyle="--", label=f"最优 m={best_m}")
+    axes[1].axvline(best_m, color="red", linestyle="--", label=f"采用 m={best_m}")
     axes[1].set_xlabel("m 参数值")
     axes[1].set_ylabel("Top100 中低评价图书数\n(Votes < 100)")
     axes[1].set_title("m 参数 vs 小众图书过滤效果")
@@ -102,7 +103,8 @@ if __name__ == "__main__":
     colors1 = plt.cm.Blues(np.linspace(0.4, 0.9, 15))
     axes[0].barh(range(15), top15_raw["score_popularity"].values, color=colors1[::-1])
     axes[0].set_yticks(range(15))
-    axes[0].set_yticklabels(top15_raw["title"].values, fontsize=9)
+    raw_titles = top15_raw["title"].astype(str).str.replace("•", "·", regex=False)
+    axes[0].set_yticklabels(raw_titles.values, fontsize=9)
     axes[0].invert_yaxis()
     axes[0].set_title("原始综合排名")
     axes[0].set_xlabel("评分 * Log(评价人数)")
@@ -110,7 +112,8 @@ if __name__ == "__main__":
     colors2 = plt.cm.Oranges(np.linspace(0.4, 0.9, 15))
     axes[1].barh(range(15), top15["bayesian_score"].values, color=colors2[::-1])
     axes[1].set_yticks(range(15))
-    axes[1].set_yticklabels(top15["title"].values, fontsize=9)
+    bayesian_titles = top15["title"].astype(str).str.replace("•", "·", regex=False)
+    axes[1].set_yticklabels(bayesian_titles.values, fontsize=9)
     axes[1].invert_yaxis()
     axes[1].set_title(f"贝叶斯加权排名 (m={best_m})")
     axes[1].set_xlabel("贝叶斯加权评分")

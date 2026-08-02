@@ -54,20 +54,33 @@ def setup_chinese_font():
 
 
 def dedup_editions(df):
-    """Remove duplicate editions: normalize title + author group, keep most voted."""
+    """Collapse clear edition variants while preserving distinct volumes/parts."""
     import re
     if df is None or df.empty:
         return df
     d = df.copy()
-    # Normalize title: remove punctuation, fullwidth chars, volume suffixes
+
+    edition_markers = re.compile(
+        r"原书第[^）)]*版|第[一二三四五六七八九十0-9]+版|"
+        r"修订版|增订版|新版|再版|精装|平装|典藏|珍藏|纪念|套装"
+    )
+
+    # Only remove explicit edition/format markers. Volumes and parts are content.
     def _norm(s):
         s = str(s).strip()
-        s = re.sub(r"\uff08.*?\uff09|\（.*?\）|\(.*?\)", "", s)  # remove parentheticals
-        s = re.sub(r"[\u3000-\u303f\uff00-\uffef]", "", s)  # fullwidth
+        s = re.sub(
+            r"[（(]([^）)]*)[）)]",
+            lambda match: "" if edition_markers.search(match.group(1)) else match.group(1),
+            s,
+        )
         s = re.sub(r"[,\.\uff0c\u3001\uff1b;:!\uff01\?\uff1f\u300a\u300b\u300c\u300d]", "", s)
         s = re.sub(r"\s+", "", s)  # spaces
-        s = re.sub(r"(\u4e0a|\u4e0b|\u5168|\u5408|\u5957\u88c5|\u7cbe\u88c5|\u5178\u85cf|\u7eaa\u5ff5|\u7b2c[\u4e00-\u4e5d\u5341\u3007]+[\u5377\u518c\u90e8\u96c6\u7248]|\u2160+|\u2161+|I+)$", "", s)
-        s = re.sub(r"\(.*?\)", "", s)
+        s = re.sub(
+            r"(原书第[^）)]*版|第[一二三四五六七八九十0-9]+版|"
+            r"修订版|增订版|新版|再版|精装|平装|典藏|珍藏|纪念|套装)$",
+            "",
+            s,
+        )
         return s[:30]
     d["_ntitle"] = d["title"].apply(_norm)
     # Keep highest votes per normalized title

@@ -1,6 +1,6 @@
 # 豆瓣图书评价与推荐系统 / Douban Book Recommender
 
-> 基于 174,244 本豆瓣图书数据的智能推荐与评分预测系统 —— 江南大学大学生创新训练计划项目
+> 基于 174,244 本豆瓣图书数据的可解释评价、推荐与评分预测研究原型 —— 江南大学大学生创新训练计划项目
 
 [![CI](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml)
 
@@ -60,7 +60,7 @@ graph LR
 
 ## 评估结果 / Evaluation
 
-所有数字来自 reports/evaluation_results.md，均为独立测试集结果。
+所有数字来自 `reports/evaluation_results.md`。评分预测与冷启动采用独立留出测试和嵌套交叉验证；推荐实验 A 是同系列检索代理任务，实验 E 是公开用户评分数据上的 Leave-One-Out 评估，两者不能被表述为同一种“独立测试集”。
 
 ### 1. 推荐引擎：字符 n-gram vs 语义化 TF-IDF
 
@@ -71,7 +71,7 @@ graph LR
 | E: 真实用户 LOO | Recall@10 | 0.0038 | **0.0100** | +163% |
 | E: 真实用户 LOO | Recall@20 | 0.0094 | **0.0206** | +119% |
 
-> 局限性说明：实验A（同系列）对两种引擎均存在系列偏向——字符版靠书名重叠，语义版靠共享作者名与标签，因此系列 Recall 会高估实际推荐能力，需结合实验E的真实用户指标综合判断。实验E受限于 IJCAI 数据集覆盖范围（1,603 名用户，>=10 条评分且>=5 本高分在推荐索引内），样本量有限。
+> 局限性说明：实验 A（同系列）对两种引擎均存在系列偏向——字符版靠书名重叠，语义版靠共享作者名与标签，因此系列 Recall 会高估实际推荐能力，需结合实验 E 的真实用户指标综合判断。实验 E 受限于 IJCAI 数据集覆盖范围（1,603 名用户，>=10 条评分且>=5 本高分在推荐索引内），样本量有限；Recall@20=0.0206 表明当前内容推荐仍是可解释基线，而非成熟的个性化系统。
 
 ### 2. 评分预测：LabelEncoder 缺陷发现 -> OOF 目标均值编码
 
@@ -119,7 +119,7 @@ graph LR
 
 ## 数据质量工程 / Data Quality
 
-- **多版本去重**：dedup_editions() 规范化书名（去标点/空格/全半角/卷册后缀）后按作者分组留 votes 最高版本。例：《深入理解计算机系统》两版归一。
+- **多版本去重**：`dedup_editions()` 规范化书名，仅移除“第X版/修订版/精装/套装”等明确版本标记后保留 votes 最高版本；“卷Ⅱ/卷Ⅲ、上/下册”等内容边界分别保留。当前展示数据缺少全量作者键，因此同名异书仍存在误合并风险，答辩中不将其表述为严格实体消歧。
 - **名称归一**：normalize_publisher()/normalize_author() 处理繁简体、合并条目拆分、后缀剥离、30 余个变体归一。例：「東立」+「東立出版社」+「東立出版社有限公司」-> 東立出版社 44本；「钱钟书」+「钱锺书」-> 钱锺书 16本。
 - **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75=8.0，C=8.16；归一化后共492家出版社，统计与榜单纳入其中图书数>=3的214家；作者归一化后2,842位，纳入>=2的886位）。例：北京体育大学出版社（n=1/均分9.90）原始第1位 → 收缩后第58位；中华书局（n=35/均分8.99）原始第62位 → 收缩后第1位。
 
@@ -174,7 +174,7 @@ python scripts/check_runtime_assets.py
 - Zhu et al., "DTCDR: A Framework for Dual-Target Cross-Domain Recommendation", CIKM 2019
 - Zhu et al., "GA-DTCDR: Graph Embeddings for Cross-Domain Recommendation", IJCAI 2020
 
-**研究用途说明**：本项目仅将 IJCAI 数据集用于学术研究与教学演示，不作商业用途。原始数据集部分文件（user_ratings.csv）未入库，仅保留聚合变换产物（book_tags.json、tag_counts.csv）。
+**研究用途说明**：本项目仅将公开数据与聚合产物用于学术研究和教学演示，不作商业用途，不展示用户身份信息。原始数据集部分文件（user_ratings.csv）未入库，仅保留聚合变换产物（book_tags.json、tag_counts.csv）。爬取形成的详情与简介是离线研究快照，不代表豆瓣当前页面状态。
 
 ---
 
