@@ -12,11 +12,19 @@ import numpy as np
 import pickle
 import json
 import re
+import warnings
 from pathlib import Path
 from scipy.sparse import save_npz, load_npz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
-import jieba
+
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="pkg_resources is deprecated as an API.*",
+        category=UserWarning,
+    )
+    import jieba
 
 
 class BookRecommender:

@@ -107,7 +107,7 @@ def show(
                 if st.button(
                     btn_label,
                     key="suggest_{0}".format(match["id"]),
-                    use_container_width=True,
+                    width="stretch",
                     help="{0:,}人评价".format(int(match["votes"])),
                 ):
                     st.session_state.selected_book_id = int(match["id"])
@@ -185,7 +185,7 @@ def show(
             "content_recs.csv",
             "text/csv",
             key="dl_c",
-            use_container_width=True,
+            width="stretch",
         )
     with ec2:
         hybrid_csv = hybrid_recs.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -195,5 +195,5 @@ def show(
             "hybrid_recs.csv",
             "text/csv",
             key="dl_h",
-            use_container_width=True,
+            width="stretch",
         )

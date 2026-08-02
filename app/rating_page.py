@@ -72,7 +72,7 @@ def show(predictor, fallback_metrics):
         )
         binding_choice = st.selectbox("装帧", ["平装", "精装", "其他"], key="pred_binding")
         predict_btn = st.button(
-            "🚀 开始预测", type="primary", use_container_width=True, key="pred_btn"
+            "🚀 开始预测", type="primary", width="stretch", key="pred_btn"
         )
 
     with rc2:

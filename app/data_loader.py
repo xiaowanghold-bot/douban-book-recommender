@@ -15,6 +15,7 @@ FIG_DIR = BASE_DIR / "reports" / "figures"
 COVER_DIR = Path(__file__).parent / "covers"
 PROCESSED_DIR = DATA_DIR / "processed"
 MODELS_DIR = DATA_DIR / "models"
+RECOMMENDER_CACHE_VERSION = 2
 
 FALLBACK_VERIFIED_COVERS = {
     1007305,
@@ -73,8 +74,9 @@ def _load_json(path, default):
 
 
 @st.cache_resource
-def load_recommender():
-    """加载推荐引擎，缺失产物时给出明确恢复命令。"""
+def load_recommender(cache_version=RECOMMENDER_CACHE_VERSION):
+    """按接口版本加载推荐引擎，缺失产物时给出明确恢复命令。"""
+    del cache_version  # 参数只用于隔离不同接口版本的 Streamlit 缓存键。
     import recommendation
 
     parameters = inspect.signature(

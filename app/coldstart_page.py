@@ -37,7 +37,7 @@ def show(csp):
     is_translation = st.checkbox("📖 翻译作品（有译者或原版书名）", key="cs_trans")
     is_series = st.checkbox("📚 系列作品（属于丛书系列）", key="cs_series")
 
-    predict_btn = st.button("🚀 预测评分", type="primary", use_container_width=True, key="cs_predict_btn")
+    predict_btn = st.button("🚀 预测评分", type="primary", width="stretch", key="cs_predict_btn")
 
     if predict_btn:
         if not author or not publisher:
@@ -94,7 +94,7 @@ def show(csp):
                                  title="特征对预测的影响程度",
                                  color="importance", color_continuous_scale="Greens")
                     fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
                 st.markdown("**📚 标准化特征最接近的已有书籍**")
                 sim_data = []
@@ -106,7 +106,7 @@ def show(csp):
                         "相似度": f"{sb['similarity']:.3f}",
                     })
                 if sim_data:
-                    st.dataframe(pd.DataFrame(sim_data), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(sim_data), width="stretch", hide_index=True)
 
     st.markdown("---")
     with st.expander("🧠 模型信息", expanded=False):

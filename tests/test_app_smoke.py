@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -23,6 +24,40 @@ PAGES = [
     "🏷️ 标签浏览",
     "📋 关于项目",
 ]
+
+
+def test_app_recovers_from_stale_data_loader(monkeypatch):
+    """入口脚本应刷新云端热更新前残留的数据加载模块。"""
+    import data_loader
+
+    class LegacyRecommender:
+        def recommend_by_title(self, query, top_n=10):
+            return query, top_n
+
+    @st.cache_resource
+    def load_legacy_recommender():
+        return LegacyRecommender()
+
+    original_version = data_loader.RECOMMENDER_CACHE_VERSION
+    del data_loader.RECOMMENDER_CACHE_VERSION
+    monkeypatch.setattr(
+        data_loader,
+        "load_recommender",
+        load_legacy_recommender,
+    )
+    assert data_loader.load_recommender() is data_loader.load_recommender()
+
+    try:
+        stale_app = AppTest.from_file(str(APP_DIR / "main.py"))
+        stale_app.run(timeout=60)
+        stale_app.sidebar.radio[0].set_value(PAGES[2]).run(timeout=60)
+        stale_app.text_input[0].set_value("三体").run(timeout=60)
+
+        assert not stale_app.exception
+        assert any(button.label.startswith("三体 ") for button in stale_app.button)
+    finally:
+        data_loader.RECOMMENDER_CACHE_VERSION = original_version
+        st.cache_resource.clear()
 
 @pytest.fixture(scope="module")
 def app():

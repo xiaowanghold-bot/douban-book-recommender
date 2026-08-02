@@ -269,7 +269,7 @@ def _render_book_grid(books, cover_dir, verified_covers, card_bg):
                         unsafe_allow_html=True,
                     )
                     label = "🔼 收起" if selected else "📖 详情"
-                    if st.button(label, key=f"hbtn_{book_id}", use_container_width=True):
+                    if st.button(label, key=f"hbtn_{book_id}", width="stretch"):
                         st.session_state.home_detail_bid = None if selected else book_id
                         st.rerun()
 
@@ -336,7 +336,7 @@ def _render_navigation(summary, rating_metrics):
                     </div>""".format(color1, color2, icon, title, description),
                     unsafe_allow_html=True,
                 )
-                if st.button(button_text, key=button_key, use_container_width=True):
+                if st.button(button_text, key=button_key, width="stretch"):
                     st.session_state.current_page = target
                     st.rerun()
 

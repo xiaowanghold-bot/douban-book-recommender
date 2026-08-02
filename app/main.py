@@ -4,15 +4,24 @@
 功能：深色模式 | 搜索自动补全+标签筛选 | 图书详情浮窗 | 标签分类浏览 | 图书简介展示 | 评分预测
 """
 from functools import partial
+import importlib
 import sys
 from pathlib import Path
 
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from data_loader import (
+import data_loader as data_loader_module
+
+
+if not hasattr(data_loader_module, "RECOMMENDER_CACHE_VERSION"):
+    st.cache_resource.clear()
+    data_loader_module = importlib.reload(data_loader_module)
+
+from data_loader import (  # noqa: E402
     COVER_DIR,
     FIG_DIR,
+    RECOMMENDER_CACHE_VERSION,
     get_cover_path,
     get_description,
     get_detail_info as find_detail_info,
@@ -202,7 +211,7 @@ elif page == "🏆 排行榜":
             coloraxis_showscale=False,
             margin=dict(l=10, r=80, t=40, b=10)
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
         st.markdown("---")
         col_a, col_b = st.columns(2)
@@ -223,7 +232,7 @@ elif page == "🏆 排行榜":
                 xaxis_title="评分", yaxis_title="图书数量",
                 margin=dict(l=10, r=10, t=40, b=10)
             )
-            st.plotly_chart(fig_hist, use_container_width=True)
+            st.plotly_chart(fig_hist, width="stretch")
 
         with col_b:
             sample = df.sample(min(5000, len(df)), random_state=42)
@@ -248,7 +257,7 @@ elif page == "🏆 排行榜":
                 xaxis_title="评价人数 (log)", yaxis_title="评分",
                 margin=dict(l=10, r=10, t=40, b=10)
             )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
 
         st.markdown("---")
         sc1, sc2, sc3, sc4 = st.columns(4)
@@ -264,14 +273,14 @@ elif page == "🏆 排行榜":
         st.dataframe(
             disp.style.format({"评分": "{:.1f}", "贝叶斯评分": "{:.4f}", "评价人数": "{:,}"})
             .background_gradient(subset=["贝叶斯评分"], cmap="YlOrRd"),
-            use_container_width=True, height=600,
+            width="stretch", height=600,
         )
         csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
         st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
 elif page == "🔍 搜书推荐":
     from search_page import show as show_search
 
-    rec = load_recommender()
+    rec = load_recommender(RECOMMENDER_CACHE_VERSION)
     tag_to_ids, _ = load_tag_index()
     cover_map, verified_covers, get_detail_info, get_desc, _ = (
         load_book_display_context()
@@ -307,10 +316,10 @@ elif page == "🏢 出版社与作者":
         st.dataframe(
             tp.style.format({"平均评分": "{:.2f}", "综合评分(贝叶斯)": "{:.4f}", "图书数量": "{:.0f}"})
             .background_gradient(subset=["综合评分(贝叶斯)"], cmap="YlOrRd"),
-            use_container_width=True,
+            width="stretch",
         )
         if (FIG_DIR / "10_publisher_matrix.png").exists():
-            st.image(str(FIG_DIR / "10_publisher_matrix.png"), use_container_width=True)
+            st.image(str(FIG_DIR / "10_publisher_matrix.png"), width="stretch")
 
     if auth_stats is not None:
         st.markdown("---")
@@ -325,14 +334,14 @@ elif page == "🏢 出版社与作者":
         st.dataframe(
             ta.style.format({"平均评分": "{:.2f}", "影响力(贝叶斯)": "{:.1f}", "图书数量": "{:.0f}"})
             .background_gradient(subset=["影响力(贝叶斯)"], cmap="YlOrRd"),
-            use_container_width=True,
+            width="stretch",
         )
         if (FIG_DIR / "11_author_influence.png").exists():
-            st.image(str(FIG_DIR / "11_author_influence.png"), use_container_width=True)
+            st.image(str(FIG_DIR / "11_author_influence.png"), width="stretch")
 
     if (FIG_DIR / "12_year_trend.png").exists():
         st.markdown("### 📅 出版年份趋势")
-        st.image(str(FIG_DIR / "12_year_trend.png"), use_container_width=True)
+        st.image(str(FIG_DIR / "12_year_trend.png"), width="stretch")
 
 # ======================================================================
 #  评分预测 (REFORMED: prediction-first layout)
@@ -351,12 +360,12 @@ elif page == "💡 更多发现":
 
     if (FIG_DIR / "13_wordcloud.png").exists():
         st.markdown("### ☁️ 高分图书书名词云")
-        st.image(str(FIG_DIR / "13_wordcloud.png"), use_container_width=True)
+        st.image(str(FIG_DIR / "13_wordcloud.png"), width="stretch")
 
     st.markdown("---")
     if (FIG_DIR / "14_price_analysis.png").exists():
         st.markdown("### 💰 价格分析")
-        st.image(str(FIG_DIR / "14_price_analysis.png"), use_container_width=True)
+        st.image(str(FIG_DIR / "14_price_analysis.png"), width="stretch")
 
     price_df = load_price_data()
     if price_df is not None:
@@ -367,7 +376,7 @@ elif page == "💡 更多发现":
         vb.index = range(1, len(vb) + 1)
         st.dataframe(
             vb.style.format({"评分": "{:.1f}", "价格(元)": "{:.1f}", "评价人数": "{:,}"}),
-            use_container_width=True,
+            width="stretch",
         )
 
 # ======================================================================
@@ -406,7 +415,7 @@ elif page == "🏷️ 标签浏览":
                     if st.button(
                         genre,
                         key=f"genre_btn_{genre}",
-                        use_container_width=True,
+                        width="stretch",
                         help=f"浏览{genre}类图书"
                     ):
                         st.session_state["selected_genre"] = genre

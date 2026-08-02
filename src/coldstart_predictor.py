@@ -31,8 +31,6 @@ except ImportError:  # Streamlit imports src modules as top-level modules.
         train_coldstart_models,
     )
 
-warnings.filterwarnings("ignore")
-
 DATA_DIR = Path(__file__).parent.parent / "data"
 MODEL_DIR = DATA_DIR / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -187,9 +185,19 @@ class ColdStartPredictor:
             data = pickle.load(f)
         predictor = ColdStartPredictor()
         predictor.artifact_version = data.get("artifact_version", 3)
-        predictor.model = joblib.load(MODEL_DIR / "coldstart_model.joblib")
-        predictor.model_lower = joblib.load(MODEL_DIR / "coldstart_model_lower.joblib")
-        predictor.model_upper = joblib.load(MODEL_DIR / "coldstart_model_upper.joblib")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Setting the shape on a NumPy array has been deprecated.*",
+                category=DeprecationWarning,
+            )
+            predictor.model = joblib.load(MODEL_DIR / "coldstart_model.joblib")
+            predictor.model_lower = joblib.load(
+                MODEL_DIR / "coldstart_model_lower.joblib"
+            )
+            predictor.model_upper = joblib.load(
+                MODEL_DIR / "coldstart_model_upper.joblib"
+            )
         predictor.feature_names = data["feature_names"]
         predictor.feature_matrix = data["feature_matrix"]
         predictor.similarity_matrix = data.get(
