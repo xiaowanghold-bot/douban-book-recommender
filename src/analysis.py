@@ -9,8 +9,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import re
 from pathlib import Path
-from src.utils import bayesian_shrink
-from src.normalize import normalize_publisher, normalize_author
+try:
+    from .normalize import normalize_publisher, normalize_author
+    from .utils import bayesian_shrink
+except ImportError:  # Support direct script execution.
+    from normalize import normalize_publisher, normalize_author
+    from utils import bayesian_shrink
 
 # 中文字体
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]

@@ -14,13 +14,22 @@ import pickle
 import warnings
 from pathlib import Path
 
-from src.coldstart_training import (
-    build_coldstart_feature_frame,
-    build_coldstart_stats,
-    build_oof_coldstart_feature_frame,
-    prepare_coldstart_dataframe,
-    train_coldstart_models,
-)
+try:
+    from .coldstart_training import (
+        build_coldstart_feature_frame,
+        build_coldstart_stats,
+        build_oof_coldstart_feature_frame,
+        prepare_coldstart_dataframe,
+        train_coldstart_models,
+    )
+except ImportError:  # Streamlit imports src modules as top-level modules.
+    from coldstart_training import (
+        build_coldstart_feature_frame,
+        build_coldstart_stats,
+        build_oof_coldstart_feature_frame,
+        prepare_coldstart_dataframe,
+        train_coldstart_models,
+    )
 
 warnings.filterwarnings("ignore")
 

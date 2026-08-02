@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.utils import setup_chinese_font
+try:
+    from .utils import setup_chinese_font
+except ImportError:  # Support direct script execution.
+    from utils import setup_chinese_font
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(

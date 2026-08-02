@@ -8,11 +8,18 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, train_test_split
 
-from src.rating_predictor import (
-    clean_rating_author,
-    clean_rating_binding,
-    clean_rating_publisher,
-)
+try:
+    from .rating_predictor import (
+        clean_rating_author,
+        clean_rating_binding,
+        clean_rating_publisher,
+    )
+except ImportError:  # Support Streamlit top-level imports.
+    from rating_predictor import (
+        clean_rating_author,
+        clean_rating_binding,
+        clean_rating_publisher,
+    )
 
 
 FEATURE_NAMES = [

@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
-from src.utils import setup_chinese_font
+try:
+    from .utils import setup_chinese_font
+except ImportError:  # Support direct script execution.
+    from utils import setup_chinese_font
 
 # ===== 中文字体配置 =====
 plt.switch_backend("Agg")

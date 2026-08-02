@@ -15,11 +15,14 @@ import json
 import pickle
 import warnings
 
-from src.rating_predictor import (
-    build_rating_features,
-)
-from src.rating_training import prepare_rating_dataframe, train_rating_model
-from src.utils import setup_chinese_font, _CJK_FONT_CANDIDATES
+try:
+    from .rating_predictor import build_rating_features
+    from .rating_training import prepare_rating_dataframe, train_rating_model
+    from .utils import setup_chinese_font, _CJK_FONT_CANDIDATES
+except ImportError:  # Support direct script execution.
+    from rating_predictor import build_rating_features
+    from rating_training import prepare_rating_dataframe, train_rating_model
+    from utils import setup_chinese_font, _CJK_FONT_CANDIDATES
 
 warnings.filterwarnings("ignore")
 setup_chinese_font()

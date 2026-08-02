@@ -18,15 +18,12 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from src.rating_training import (
-    fit_target_encoders,
-    prepare_rating_dataframe,
-    train_rating_model,
-)
-from src.coldstart_training import (
-    evaluate_coldstart_model,
-    prepare_coldstart_dataframe,
-)
+try:
+    from .coldstart_training import evaluate_coldstart_model, prepare_coldstart_dataframe
+    from .rating_training import fit_target_encoders, prepare_rating_dataframe, train_rating_model
+except ImportError:  # Support direct script execution.
+    from coldstart_training import evaluate_coldstart_model, prepare_coldstart_dataframe
+    from rating_training import fit_target_encoders, prepare_rating_dataframe, train_rating_model
 
 warnings.filterwarnings("ignore")
 
