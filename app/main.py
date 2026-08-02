@@ -3,23 +3,42 @@
 江南大学大学生创新训练计划项目
 功能：深色模式 | 搜索自动补全+标签筛选 | 图书详情浮窗 | 标签分类浏览 | 图书简介展示 | 评分预测
 """
-import streamlit as st
-import pandas as pd
-import numpy as np
-import base64
-import json
+from functools import partial
 import sys
 from pathlib import Path
 
+import streamlit as st
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from recommendation import BookRecommender
 from components import render_cover
+from data_loader import (
+    COVER_DIR,
+    FIG_DIR,
+    get_cover_path,
+    get_description,
+    get_detail_info as find_detail_info,
+    load_author_stats,
+    load_coldstart_model_meta,
+    load_coldstart_predictor,
+    load_cover_map,
+    load_descriptions,
+    load_detail_data,
+    load_genre_index,
+    load_price_data,
+    load_publisher_stats as load_pub_stats,
+    load_rating_model_meta,
+    load_rating_predictor as load_predictor,
+    load_recommender,
+    load_scored_data,
+    load_tag_index,
+    load_verified_covers,
+)
 from utils import dedup_editions
-from genre_search import build_genre_search_index, search_books_by_genre, GENRE_GROUPS
+from genre_search import search_books_by_genre, GENRE_GROUPS
 from coldstart_page import show as show_coldstart
+from home_page import show as show_home
 from rating_page import show as show_rating
 from search_page import show as show_search
-from rating_predictor import RatingPredictorArtifact
 
 st.set_page_config(
     page_title="豆瓣图书评价与推荐系统",
@@ -28,187 +47,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-BASE_DIR = Path(__file__).parent.parent
-FIG_DIR = BASE_DIR / "reports" / "figures"
-DATA_DIR = BASE_DIR / "data"
-COVER_DIR = Path(__file__).parent / "covers"
-DESC_FILE = DATA_DIR / "processed" / "book_descriptions.json"
-COVER_MAP_FILE = DATA_DIR / "processed" / "book_covers.json"
-
-# ========== 缓存加载 ==========
-@st.cache_resource
-def load_recommender():
-    """加载推荐引擎，缺失模型文件时给出明确提示并停止。"""
-    models_dir = BASE_DIR / "data" / "models"
-    required = [
-        models_dir / "tfidf_matrix.npz",
-        models_dir / "nn_neighbors.pkl",
-        models_dir / "vectorizer.pkl",
-        models_dir / "books_for_rec.csv",
-    ]
-    for f in required:
-        if not f.exists():
-            st.error(f"模型文件缺失：{f.name}。请先运行 src/recommendation.py 生成模型产物。")
-            st.stop()
-    rec = BookRecommender()
-    rec._load_artifacts()
-    return rec
-
-@st.cache_data
-def load_scored_data():
-    """加载评分数据，缺失时给出明确提示并停止。"""
-    p = BASE_DIR / "data" / "processed" / "books_scored.csv"
-    if not p.exists():
-        st.error("数据文件缺失：books_scored.csv。请先运行 src/scoring.py 生成评分数据。")
-        st.stop()
-    return pd.read_csv(p, encoding="utf-8-sig")
-
-@st.cache_data
-def load_price_data():
-    p = BASE_DIR / "data" / "processed" / "books_with_price.csv"
-    return pd.read_csv(p, encoding="utf-8-sig") if p.exists() else None
-
-@st.cache_data
-def load_pub_stats():
-    p = BASE_DIR / "data" / "processed" / "publisher_stats.csv"
-    return pd.read_csv(p, encoding="utf-8-sig", index_col=0) if p.exists() else None
-
-@st.cache_data
-def load_author_stats():
-    p = BASE_DIR / "data" / "processed" / "author_stats.csv"
-    return pd.read_csv(p, encoding="utf-8-sig", index_col=0) if p.exists() else None
-
-@st.cache_resource
-def load_predictor():
-    p = BASE_DIR / "data" / "models" / "rating_predictor.pkl"
-    return RatingPredictorArtifact.load(p)
-
-
-@st.cache_data
-def load_rating_model_meta():
-    path = BASE_DIR / "data" / "models" / "rating_model_meta.json"
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-@st.cache_data
-def load_coldstart_model_meta():
-    path = BASE_DIR / "data" / "models" / "coldstart_model_meta.json"
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-@st.cache_resource
-def load_coldstart_predictor():
-    from coldstart_predictor import ColdStartPredictor
-    return ColdStartPredictor.load()
-
-@st.cache_data
-def load_detail_data():
-    p = BASE_DIR / "data" / "raw" / "Books_detail.csv"
-    return pd.read_csv(p, encoding="utf-8-sig") if p.exists() else None
-
-@st.cache_data
-def load_descriptions():
-    if DESC_FILE.exists():
-        with open(DESC_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-@st.cache_data
-def load_cover_map():
-    if COVER_MAP_FILE.exists():
-        with open(COVER_MAP_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-@st.cache_resource
-def load_tag_index():
-    """Build tag->book_ids inverted index from real Douban user tags."""
-    import json
-    import pandas as pd
-    tag_file = DATA_DIR / "processed" / "book_tags.json"
-    tc_file = DATA_DIR / "processed" / "tag_counts.csv"
-    tag_to_ids = {}
-    top_tags = []
-    if tag_file.exists():
-        with open(tag_file, "r", encoding="utf-8") as f:
-            all_tags = json.load(f)
-        for book_id_str, tags in all_tags.items():
-            bid = int(book_id_str)
-            for t in tags:
-                tag_to_ids.setdefault(t, set()).add(bid)
-    if tc_file.exists():
-        tc = pd.read_csv(tc_file)
-        top_tags = tc.nlargest(30, "count")["tag"].tolist()
-    return tag_to_ids, top_tags
-
 rec = load_recommender()
 df = load_scored_data()
 tag_to_ids, top_tags_list = load_tag_index()
-
-# ===== 流派搜索索引 =====
-@st.cache_resource
-def load_genre_index(_df):
-    return build_genre_search_index(_df, str(DATA_DIR / "processed" / "book_descriptions.json"))
-
 genre_text_index = load_genre_index(df)
 detail_df = load_detail_data()
 descriptions = load_descriptions()
 cover_map = load_cover_map()
 pub_stats = load_pub_stats()
 auth_stats = load_author_stats()
-rating_model_meta = load_rating_model_meta()
-rating_metrics = rating_model_meta.get("metrics", {})
-coldstart_model_meta = load_coldstart_model_meta()
-coldstart_metrics = coldstart_model_meta.get("metrics", {})
+rating_metrics = load_rating_model_meta().get("metrics", {})
+coldstart_metrics = load_coldstart_model_meta().get("metrics", {})
+VERIFIED_COVERS = load_verified_covers()
 
-# ========== 工具函数 ==========
-def get_detail_info(book_id):
-    if detail_df is None:
-        return {}
-    row = detail_df[detail_df["ID"] == int(book_id)]
-    if row.empty:
-        return {}
-    r = row.iloc[0]
-    return {
-        "author": str(r.get("author", "")).strip("[]").replace("'", ""),
-        "publisher": str(r.get("publisher", "")),
-        "pub_year": str(r.get("pub_year", "")),
-        "pages": str(r.get("pages", "")),
-        "price": str(r.get("price", "")),
-        "binding": str(r.get("binding", "")),
-        "isbn": str(r.get("isbn", "")),
-    }
+get_detail_info = partial(find_detail_info, detail_df)
+get_desc = partial(get_description, descriptions)
+get_cover = partial(
+    get_cover_path,
+    cover_map=cover_map,
+    cover_dir=COVER_DIR,
+    verified_covers=VERIFIED_COVERS,
+)
 
-def get_desc(book_id):
-    return descriptions.get(str(int(book_id)), "")
-
-# 已验证封面集合（页面爬取，100%准确）
-# 动态加载验证封面列表
-_vf = BASE_DIR / "data" / "processed" / "verified_covers.json"
-if _vf.exists():
-    VERIFIED_COVERS = set(json.load(open(_vf, encoding="utf-8")))
-else:
-    VERIFIED_COVERS = {1007305,10608468,1068337,11530078,1211572,1221512,1221514,1258136,1358243,1448820,1467519,1542939,1608298,1668197,1774227,1844794,1950809,2032898,25709685,25757313,25898626,25907864,25914783,26197294,26304954,26423502,26435630,26912767,27154246,3048059,3162991,4201317,4759840,6435891,10608472,10608473,1195905,1236999,1400833,1621418,1625657,25918941,26388289,26389897,26469245}
-
-def get_cover(book_id):
-    """获取封面，仅返回已验证的准确封面"""
-    if int(book_id) not in VERIFIED_COVERS:
-        return None
-    fname = cover_map.get(str(int(book_id)), "")
-    if fname:
-        full = COVER_DIR / fname
-        if full.exists():
-            return str(full)
-    for ext in ["jpg", "png", "webp"]:
-        f = COVER_DIR / "{0}.{1}".format(int(book_id), ext)
-        if f.exists():
-            return str(f)
-    return None
 # ========== 深色模式 ==========
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
@@ -286,246 +146,19 @@ with st.sidebar:
 #  首页
 # ======================================================================
 if page == "🏠 首页":
-    import plotly.express as px
-
-    dark_bg = "#1a1a2e" if st.session_state.dark_mode else "#ffffff"
-    card_bg = "#2d2d44" if st.session_state.dark_mode else "#ffffff"
-    text_color = "#e0e0e0" if st.session_state.dark_mode else "#2c3e50"
-    sub_color = "#aaa" if st.session_state.dark_mode else "#888"
-    border_color = "#3d3d5c" if st.session_state.dark_mode else "#f0f0f0"
-
-    st.markdown("""
-    <style>
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-    @keyframes fadeInUp {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-6px); }
-    }
-    .hero-title {
-        font-size: 3.2em; font-weight: 900; text-align: center;
-        background: linear-gradient(270deg, #667eea, #764ba2, #f093fb, #f5576c, #4facfe, #00f2fe);
-        background-size: 400% 400%;
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text;
-        animation: gradientShift 6s ease infinite;
-        padding: 15px 0 5px 0; letter-spacing: 2px;
-    }
-    .hero-subtitle {
-        text-align: center; font-size: 1.2em; margin-bottom: 30px;
-        animation: fadeInUp 0.8s ease;
-    }
-    .stat-card {
-        background: VAR_CARD_BG; border-radius: 16px; padding: 22px 18px; text-align: center;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.06); transition: all 0.3s ease;
-        border: 1px solid VAR_BORDER; animation: fadeInUp 0.6s ease;
-    }
-    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(0,0,0,0.12); }
-    .stat-icon { font-size: 2.2em; margin-bottom: 8px; animation: float 3s ease-in-out infinite; }
-    .stat-value { font-size: 1.8em; font-weight: 800; color: #667eea; }
-    .stat-label { font-size: 0.9em; color: VAR_SUB_COLOR; }
-    .nav-card {
-        background: VAR_CARD_BG; border-radius: 16px; padding: 28px 20px; text-align: center;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.06); transition: all 0.3s ease;
-        border: 1px solid VAR_BORDER; animation: fadeInUp 0.6s ease;
-    }
-    .nav-card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(0,0,0,0.12); }
-    .nav-card-icon { font-size: 2.8em; margin-bottom: 10px; animation: float 3s ease-in-out infinite; }
-    .nav-card-title { font-size: 1.15em; font-weight: 700; }
-    .nav-card-desc { font-size: 0.85em; margin-top: 8px; }
-    .cover-placeholder {
-        width: 100%; aspect-ratio: 3/4; border-radius: 8px;
-        display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white; font-size: 2em;
-    }
-    </style>
-    """.replace("VAR_CARD_BG", card_bg).replace("VAR_BORDER", border_color).replace("VAR_SUB_COLOR", sub_color), unsafe_allow_html=True)
-
-    # Hero
-    st.markdown('<div class="hero-title">豆瓣图书评价与推荐系统</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-subtitle" style="color:{0};">📖 发现好书 · 智能推荐 · 数据洞察</div>'.format(sub_color), unsafe_allow_html=True)
-
-    # Stats
-    stats = [
-        ("📕", "{0:,}".format(len(df)), "收录图书", "原始数据 288,824"),
-        ("⭐", "8.1", "平均评分", "最高 10.0"),
-        ("👥", "{0:,}".format((df["votes"]>=10000).sum()), "评价过万", "过千 {0:,}".format((df["votes"]>=1000).sum())),
-        ("🏢", str(len(pub_stats)) if pub_stats is not None else "?", "出版社", f"{len(auth_stats) if auth_stats is not None else '?'} 位作者"),
-        ("📈", "{0:,}".format(len(rec.id_to_idx)), "推荐引擎", "30 近邻/本"),
-        ("📝", "{0:,}".format(len(descriptions)), "图书简介", "封面 {0:,}张".format(len(cover_map))),
-    ]
-    cols = st.columns(len(stats))
-    for i, (icon, val, label, sub) in enumerate(stats):
-        with cols[i]:
-            st.markdown("""
-            <div class="stat-card">
-                <div class="stat-icon">{0}</div>
-                <div class="stat-value">{1}</div>
-                <div class="stat-label">{2}</div>
-                <div style="font-size:0.7em;color:{3};margin-top:3px;">{4}</div>
-            </div>""".format(icon, val, label, sub_color, sub), unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ====== Book Cover Showcase (clickable) ======
-    st.markdown("### 📖 精选高分图书")
-    st.caption("💡 点击「📖 查看」按钮查看图书详细信息")
-
-    # Get ALL books with covers (not just jpg)
-    cover_ids_in_dir = set()
-    if COVER_DIR.exists():
-        for f in COVER_DIR.iterdir():
-            if f.suffix.lower() in (".jpg", ".png", ".webp"):
-                try:
-                    cover_ids_in_dir.add(int(f.stem))
-                except ValueError:
-                    pass
-
-    df_with_covers = df[df["id"].isin(cover_ids_in_dir) & (df["votes"] >= 5000)]
-    if len(df_with_covers) < 24:
-        # Supplement with top books even without covers
-        extra = df[~df["id"].isin(cover_ids_in_dir)].nlargest(24 - len(df_with_covers), "bayesian_score")
-        df_with_covers = pd.concat([df_with_covers, extra])
-    top_cover_books = df_with_covers.nlargest(60, "bayesian_score")
-    # 扩大选池 + 去重同书名 + 封面质量过滤(>12KB防错图)
-    # 优先原版页面爬取封面(45张已验证)+CDN优质封面(>12KB)
-    _orig_covers = VERIFIED_COVERS
-    _pool = df_with_covers.nlargest(200, "bayesian_score")
-    _pool = _pool.drop_duplicates(subset="title", keep="first")
-    def _cover_ok(bid):
-        p = COVER_DIR / "{}.jpg".format(int(bid))
-        return p.exists() and p.stat().st_size > 12000
-    _verified = _pool[_pool["id"].isin(_orig_covers) & _pool["id"].apply(_cover_ok)]
-    _cdn_ok = _pool[~_pool["id"].isin(_orig_covers) & _pool["id"].apply(_cover_ok)]
-    top_cover_books = pd.concat([_verified, _cdn_ok]).head(24)
-    if len(top_cover_books) < 24:
-        _fallback = _pool[~_pool["id"].isin(top_cover_books["id"])].head(24 - len(top_cover_books))
-        top_cover_books = pd.concat([top_cover_books, _fallback])
-    # Row-by-row: cards + buttons interleaved
-    if "home_detail_bid" not in st.session_state:
-        st.session_state.home_detail_bid = None
-
-    card_css = """<style>
-    .home-card-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 0; }
-    .hc-card { background: VAR_CARD; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s; }
-    .hc-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
-    .hc-img { width: 100%; height: 210px; object-fit: cover; display: block; }
-    .hc-placeholder { background: linear-gradient(135deg,#667eea,#764ba2); display:flex;align-items:center;justify-content:center;color:white;font-size:3em; }
-    .hc-body { padding: 10px 8px 6px 8px; text-align: center; }
-    .hc-title { font-weight: 600; font-size: 0.85em; height: 22px; overflow: hidden; line-height: 1.3; }
-    .hc-rating { color: #f39c12; font-size: 0.78em; margin-top: 4px; }
-    </style>""".replace("VAR_CARD", card_bg)
-    st.markdown(card_css, unsafe_allow_html=True)
-
-    for row_idx in range(4):
-        # Render this rows cards
-        cards_html = '<div class="home-card-grid">'
-        for col_idx in range(6):
-            i = row_idx * 6 + col_idx
-            if i >= len(top_cover_books):
-                break
-            book = top_cover_books.iloc[i]
-            bid = int(book["id"])
-            t = str(book["title"])[:10]
-            stars = chr(9733) * round(book["rating"]/2) + chr(9734) * (5-round(book["rating"]/2))
-            is_sel = (st.session_state.home_detail_bid == bid)
-            highlight = 'border: 3px solid #667eea;' if is_sel else ''
-            
-            img_b64 = ""
-            if int(bid) in VERIFIED_COVERS:
-                for ext in ["jpg", "png", "webp"]:
-                    p = COVER_DIR / "{0}.{1}".format(bid, ext)
-                    if p.exists():
-                        with open(p, "rb") as f:
-                            img_b64 = base64.b64encode(f.read()).decode()
-                        break
-            
-            if img_b64:
-                img_html = '<img src="data:image/jpeg;base64,{0}" class="hc-img">'.format(img_b64)
-            else:
-                img_html = '<div class="hc-img hc-placeholder">📕</div>'
-            
-            cards_html += '<div class="hc-card" style="{0}">{1}<div class="hc-body"><div class="hc-title">{2}</div><div class="hc-rating">{3} {4:.1f}</div></div></div>'.format(highlight, img_html, t, stars, book["rating"])
-        cards_html += '</div>'
-        st.markdown(cards_html, unsafe_allow_html=True)
-        
-        # Render this rows buttons directly below
-        cols = st.columns(6)
-        for col_idx in range(6):
-            i = row_idx * 6 + col_idx
-            if i >= len(top_cover_books):
-                break
-            book = top_cover_books.iloc[i]
-            bid = int(book["id"])
-            with cols[col_idx]:
-                is_sel = (st.session_state.home_detail_bid == bid)
-                if is_sel:
-                    if st.button("🔼 收起", key="hbtn_{0}".format(bid), use_container_width=True):
-                        st.session_state.home_detail_bid = None
-                        st.rerun()
-                else:
-                    if st.button("📖 详情", key="hbtn_{0}".format(bid), use_container_width=True):
-                        st.session_state.home_detail_bid = bid
-                        st.rerun()
-
-    # Full-width detail panel below
-    if st.session_state.home_detail_bid is not None:
-        bid = st.session_state.home_detail_bid
-        sel_book = top_cover_books[top_cover_books["id"] == bid]
-        if not sel_book.empty:
-            book = sel_book.iloc[0]
-            info = get_detail_info(bid)
-            desc = get_desc(bid)
-            st.markdown("---")
-            st.markdown("### 📖 {0}".format(str(book["title"])))
-            dc1, dc2 = st.columns([1, 3])
-            with dc1:
-                render_cover(bid, cover_map, COVER_DIR, VERIFIED_COVERS, width=200)
-            with dc2:
-                st.markdown("⭐ {0:.1f} / 10  |  👥 {1:,} 人评价".format(float(book["rating"]), int(book["votes"])))
-                st.markdown("🏅 贝叶斯评分: {0:.4f}".format(float(book.get("bayesian_score", 0))))
-                for k in ["author", "publisher", "pub_year", "price", "pages", "binding", "isbn"]:
-                    v = info.get(k, "")
-                    if v and v != "nan" and v != "None":
-                        st.caption("{0}: {1}".format(k, v))
-            if desc:
-                st.markdown("---")
-                st.markdown("**📝 内容简介**")
-                st.markdown("> {0}".format(desc[:500]))
-
-    st.markdown("---")
-
-    # Navigation cards
-    st.markdown("### 🚀 探索更多功能")
-    fc1, fc2, fc3, fc4 = st.columns(4)
-
-    nav_data = [
-        (fc1, "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
-        (fc2, "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
-        (fc3, "🏢", "出版社与作者", f"{len(pub_stats) if pub_stats is not None else "?"}社+{len(auth_stats) if auth_stats is not None else "?"}位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
-        (fc4, "🔮", "评分预测", "R²={0:.2f}".format(rating_metrics.get("R2", 0.52)), "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
-    ]
-    for col, icon, title, desc, c1, c2, target, btn_text, btn_key in nav_data:
-        with col:
-            st.markdown("""<div class="nav-card" style="background:linear-gradient(135deg,{0},{1});">
-                <div class="nav-card-icon">{2}</div>
-                <div class="nav-card-title" style="color:white;">{3}</div>
-                <div class="nav-card-desc" style="color:rgba(255,255,255,0.85);">{4}</div>
-            </div>""".format(c1, c2, icon, title, desc), unsafe_allow_html=True)
-            if st.button(btn_text, key=btn_key, use_container_width=True):
-                st.session_state.current_page = target
-                st.rerun()
-
-    st.markdown("---")
-    st.caption("江南大学 · 大学生创新训练计划项目 | 豆瓣读书公开数据集")
+    show_home(
+        df,
+        rec,
+        pub_stats,
+        auth_stats,
+        descriptions,
+        cover_map,
+        COVER_DIR,
+        VERIFIED_COVERS,
+        get_detail_info,
+        get_desc,
+        rating_metrics,
+    )
 
 # ======================================================================
 #  排行榜

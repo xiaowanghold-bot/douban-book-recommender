@@ -22,13 +22,16 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Validate runtime assets
+        run: python scripts/check_runtime_assets.py
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
       - name: Lint
-        run: python -m ruff check app src tests crawler
+        run: python -m ruff check app src tests crawler scripts
 
       - name: Test
         run: python -m pytest

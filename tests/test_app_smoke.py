@@ -38,6 +38,18 @@ def test_all_nav_pages(app):
         app.sidebar.radio[0].set_value(page_name).run()
         assert not app.exception, f"Page {page_name} caused exception"
 
+
+def test_home_detail_interaction(app):
+    app.sidebar.radio[0].set_value(PAGES[0]).run()
+    assert not app.exception
+    detail_buttons = [button for button in app.button if button.label == "📖 详情"]
+    assert detail_buttons, "首页应展示可展开的精选图书"
+
+    detail_buttons[0].click().run(timeout=60)
+    assert not app.exception
+    assert any(button.label == "🔼 收起" for button in app.button)
+
+
 def test_rating_prediction_v2(app):
     """Verify v2 predictor uses dict-based means (not LabelEncoder)."""
     app.sidebar.radio[0].set_value(PAGES[4]).run()

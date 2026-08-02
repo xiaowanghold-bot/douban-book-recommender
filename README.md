@@ -147,7 +147,8 @@ pytest tests/ -v
 
 # 开发环境（包含 pytest + ruff）
 pip install -r requirements-dev.txt
-ruff check app src tests crawler
+ruff check app src tests crawler scripts
+python scripts/check_runtime_assets.py
 ```
 
 项目使用 Python 3.12；核心科学计算与 scikit-learn 版本已锁定，以保证仓库内预训练模型可重复加载。Streamlit Community Cloud 部署时请在 Advanced settings 中选择 Python 3.12。
@@ -186,10 +187,12 @@ data/models/ 目录下为预计算产物，因 Streamlit Cloud 部署需要而�
 | nn_neighbors.pkl | ~10 MB | src/recommendation.py |
 | vectorizer.pkl | ~1.5 MB | src/recommendation.py |
 | books_for_rec.csv | ~16 MB | src/recommendation.py |
-| rating_predictor.pkl | ~5.2 MB | src/enhancements.py |
-| coldstart_model*.joblib | ~1.1 MB (3 files) | src/coldstart_predictor.py |
+| rating_predictor.pkl | ~5.7 MB | src/enhancements.py |
+| coldstart_meta.pkl + coldstart_model*.joblib | ~3.1 MB | src/coldstart_predictor.py |
 
 > nn_neighbors.npz（~80 MB，仅离线评估使用）不入库，运行 python -m src.recommendation 生成。若更改特征工程或训练数据，需重新运行对应脚本生成新产物。
+
+模型、封面和仓库瘦身方案详见 [部署与资源文件策略](docs/deployment_and_assets.md)。CI 会运行 `scripts/check_runtime_assets.py`，检查线上必需产物是否完整、已被 Git 跟踪且低于 GitHub 100MB 单文件限制。
 ---
 
 ## 未来工作 / Future Work
