@@ -1,5 +1,7 @@
 """Streamlit 应用的数据、索引与模型加载层。"""
 
+import importlib
+import inspect
 import json
 from pathlib import Path
 
@@ -73,7 +75,15 @@ def _load_json(path, default):
 @st.cache_resource
 def load_recommender():
     """加载推荐引擎，缺失产物时给出明确恢复命令。"""
-    from recommendation import BookRecommender
+    import recommendation
+
+    parameters = inspect.signature(
+        recommendation.BookRecommender.recommend_by_title
+    ).parameters
+    if "allowed_ids" not in parameters:
+        recommendation = importlib.reload(recommendation)
+
+    BookRecommender = recommendation.BookRecommender
 
     required = [
         MODELS_DIR / "tfidf_matrix.npz",

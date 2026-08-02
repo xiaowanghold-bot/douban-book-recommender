@@ -1,6 +1,8 @@
 """应用数据访问层与首页选书逻辑测试。"""
 
+import inspect
 import sys
+import types
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +20,46 @@ from data_loader import (  # noqa: E402
 )
 from app_summary import build_app_summary  # noqa: E402
 from home_page import select_featured_books  # noqa: E402
+
+
+def test_load_recommender_recovers_from_stale_module(monkeypatch, tmp_path):
+    """云端热更新后，加载器应淘汰不支持标签筛选的旧推荐器类。"""
+    import data_loader
+
+    class LegacyRecommender:
+        def _load_artifacts(self):
+            pass
+
+        def recommend_by_title(self, query, top_n=10):
+            return query, top_n
+
+    stale_module = types.ModuleType("recommendation")
+    stale_module.BookRecommender = LegacyRecommender
+
+    for filename in [
+        "tfidf_matrix.npz",
+        "nn_neighbors.pkl",
+        "vectorizer.pkl",
+        "books_for_rec.csv",
+    ]:
+        (tmp_path / filename).write_bytes(b"test artifact")
+
+    monkeypatch.setattr(data_loader, "MODELS_DIR", tmp_path)
+    monkeypatch.setitem(sys.modules, "recommendation", stale_module)
+    data_loader.load_recommender.clear()
+
+    try:
+        recommender = data_loader.load_recommender()
+        parameters = inspect.signature(
+            recommender.recommend_by_title
+        ).parameters
+
+        assert "allowed_ids" in parameters
+        assert recommender.recommend_by_title(
+            "三体", top_n=1, allowed_ids=set()
+        ).empty
+    finally:
+        data_loader.load_recommender.clear()
 
 
 def test_get_detail_info_normalizes_author():
