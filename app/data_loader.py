@@ -6,11 +6,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from coldstart_predictor import ColdStartPredictor
-from genre_search import build_genre_search_index
-from rating_predictor import RatingPredictorArtifact
-from recommendation import BookRecommender
-
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -78,6 +73,8 @@ def _load_json(path, default):
 @st.cache_resource
 def load_recommender():
     """加载推荐引擎，缺失产物时给出明确恢复命令。"""
+    from recommendation import BookRecommender
+
     required = [
         MODELS_DIR / "tfidf_matrix.npz",
         MODELS_DIR / "nn_neighbors.pkl",
@@ -122,6 +119,8 @@ def load_author_stats():
 
 @st.cache_resource
 def load_rating_predictor():
+    from rating_predictor import RatingPredictorArtifact
+
     return RatingPredictorArtifact.load(MODELS_DIR / "rating_predictor.pkl")
 
 
@@ -137,6 +136,8 @@ def load_coldstart_model_meta():
 
 @st.cache_resource
 def load_coldstart_predictor():
+    from coldstart_predictor import ColdStartPredictor
+
     return ColdStartPredictor.load()
 
 
@@ -181,8 +182,16 @@ def load_tag_index():
 
 @st.cache_resource
 def load_genre_index(_df):
+    from genre_search import build_genre_search_index
+
     descriptions_path = PROCESSED_DIR / "book_descriptions.json"
     return build_genre_search_index(_df, str(descriptions_path))
+
+
+@st.cache_data
+def load_app_summary():
+    """加载供导航栏和首页使用的轻量统计，避免为展示计数加载完整模型。"""
+    return _load_json(PROCESSED_DIR / "app_summary.json", {})
 
 
 def get_detail_info(detail_df, book_id):

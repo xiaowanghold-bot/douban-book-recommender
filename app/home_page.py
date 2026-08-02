@@ -2,9 +2,11 @@
 
 import base64
 from html import escape
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+from PIL import Image, ImageOps
 
 from components import render_cover
 
@@ -57,15 +59,29 @@ def select_featured_books(df, cover_dir, verified_covers, limit=24):
     return selected
 
 
+@st.cache_data(show_spinner=False)
+def _thumbnail_data_uri(path_text, modified_ns):
+    """生成卡片缩略图；文件修改时间作为缓存失效键。"""
+    del modified_ns
+    try:
+        with Image.open(path_text) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail((240, 320), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=78, optimize=True, progressive=True)
+    except (OSError, ValueError):
+        return None
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
 def _cover_data_uri(book_id, cover_dir, verified_covers):
     if int(book_id) not in verified_covers:
         return None
     path = _cover_path(book_id, cover_dir)
     if path is None:
         return None
-    mime_types = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
-    encoded = base64.b64encode(path.read_bytes()).decode()
-    return f"data:{mime_types[path.suffix.lower()]};base64,{encoded}"
+    return _thumbnail_data_uri(str(path), path.stat().st_mtime_ns)
 
 
 def _inject_home_css(card_bg, border_color, sub_color):
@@ -116,6 +132,44 @@ def _inject_home_css(card_bg, border_color, sub_color):
         .nav-card-icon { font-size: 2.8em; margin-bottom: 10px; animation: float 3s ease-in-out infinite; }
         .nav-card-title { font-size: 1.15em; font-weight: 700; }
         .nav-card-desc { font-size: 0.85em; margin-top: 8px; }
+        @media (max-width: 1100px) {
+            .st-key-home_stats [data-testid="stHorizontalBlock"],
+            .st-key-home_navigation [data-testid="stHorizontalBlock"],
+            .st-key-home_featured_grid [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+            .stApp .st-key-home_stats [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+            .stApp .st-key-home_featured_grid [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                flex: 1 1 calc(33.333% - 1rem) !important;
+                min-width: calc(33.333% - 1rem) !important;
+                width: calc(33.333% - 1rem) !important;
+                max-width: calc(33.333% - 1rem) !important;
+            }
+            .stApp .st-key-home_navigation [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                flex: 1 1 calc(50% - 1rem) !important;
+                min-width: calc(50% - 1rem) !important;
+                width: calc(50% - 1rem) !important;
+                max-width: calc(50% - 1rem) !important;
+            }
+        }
+        @media (max-width: 680px) {
+            .hero-title { font-size: clamp(2rem, 10vw, 3.2rem); line-height: 1.15; }
+            .hero-subtitle { font-size: 1rem; margin-bottom: 20px; }
+            .stat-card { padding: 16px 10px; }
+            .stat-icon { font-size: 1.7em; }
+            .stat-value { font-size: 1.35em; }
+            .stApp .st-key-home_stats [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+            .stApp .st-key-home_featured_grid [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                flex: 1 1 calc(50% - 0.75rem) !important;
+                min-width: calc(50% - 0.75rem) !important;
+                width: calc(50% - 0.75rem) !important;
+                max-width: calc(50% - 0.75rem) !important;
+            }
+            .stApp .st-key-home_navigation [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                flex: 1 1 100% !important;
+                min-width: 100% !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+        }
         </style>
         """.replace("VAR_CARD_BG", card_bg)
         .replace("VAR_BORDER", border_color)
@@ -124,44 +178,45 @@ def _inject_home_css(card_bg, border_color, sub_color):
     )
 
 
-def _render_stats(df, rec, pub_stats, auth_stats, descriptions, cover_map, sub_color):
+def _render_stats(summary, sub_color):
     stats = [
-        ("📕", "{0:,}".format(len(df)), "收录图书", "原始数据 288,824"),
-        ("⭐", "{0:.1f}".format(df["rating"].mean()), "平均评分", "最高 10.0"),
+        ("📕", "{0:,}".format(summary.get("book_count", 0)), "收录图书", "原始数据 288,824"),
+        ("⭐", "{0:.1f}".format(summary.get("average_rating", 0)), "平均评分", "最高 10.0"),
         (
             "👥",
-            "{0:,}".format((df["votes"] >= 10000).sum()),
+            "{0:,}".format(summary.get("votes_10000_count", 0)),
             "评价过万",
-            "过千 {0:,}".format((df["votes"] >= 1000).sum()),
+            "过千 {0:,}".format(summary.get("votes_1000_count", 0)),
         ),
         (
             "🏢",
-            str(len(pub_stats)) if pub_stats is not None else "?",
+            str(summary.get("publisher_count", "?")),
             "出版社",
-            f"{len(auth_stats) if auth_stats is not None else '?'} 位作者",
+            f"{summary.get('author_count', '?')} 位作者",
         ),
-        ("📈", "{0:,}".format(len(rec.id_to_idx)), "推荐引擎", "30 近邻/本"),
+        ("📈", "{0:,}".format(summary.get("recommendation_count", 0)), "推荐引擎", "30 近邻/本"),
         (
             "📝",
-            "{0:,}".format(len(descriptions)),
+            "{0:,}".format(summary.get("description_count", 0)),
             "图书简介",
-            "封面 {0:,}张".format(len(cover_map)),
+            "封面 {0:,}张".format(summary.get("cover_count", 0)),
         ),
     ]
-    cols = st.columns(len(stats))
-    for col, (icon, value, label, sublabel) in zip(cols, stats):
-        with col:
-            st.markdown(
-                """
-                <div class="stat-card">
-                    <div class="stat-icon">{0}</div>
-                    <div class="stat-value">{1}</div>
-                    <div class="stat-label">{2}</div>
-                    <div style="font-size:0.7em;color:{3};margin-top:3px;">{4}</div>
-                </div>
-                """.format(icon, value, label, sub_color, sublabel),
-                unsafe_allow_html=True,
-            )
+    with st.container(key="home_stats"):
+        cols = st.columns(len(stats))
+        for col, (icon, value, label, sublabel) in zip(cols, stats):
+            with col:
+                st.markdown(
+                    """
+                    <div class="stat-card">
+                        <div class="stat-icon">{0}</div>
+                        <div class="stat-value">{1}</div>
+                        <div class="stat-label">{2}</div>
+                        <div style="font-size:0.7em;color:{3};margin-top:3px;">{4}</div>
+                    </div>
+                    """.format(icon, value, label, sub_color, sublabel),
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_book_grid(books, cover_dir, verified_covers, card_bg):
@@ -170,7 +225,6 @@ def _render_book_grid(books, cover_dir, verified_covers, card_bg):
 
     st.markdown(
         """<style>
-        .home-card-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 0; }
         .hc-card { background: VAR_CARD; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s; }
         .hc-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
         .hc-img { width: 100%; height: 210px; object-fit: cover; display: block; }
@@ -178,42 +232,46 @@ def _render_book_grid(books, cover_dir, verified_covers, card_bg):
         .hc-body { padding: 10px 8px 6px 8px; text-align: center; }
         .hc-title { font-weight: 600; font-size: 0.85em; height: 22px; overflow: hidden; line-height: 1.3; }
         .hc-rating { color: #f39c12; font-size: 0.78em; margin-top: 4px; }
+        @media (max-width: 680px) { .hc-img { height: 190px; } }
         </style>""".replace("VAR_CARD", card_bg),
         unsafe_allow_html=True,
     )
 
-    for row_index in range(4):
-        cards_html = '<div class="home-card-grid">'
-        row_books = books.iloc[row_index * 6 : (row_index + 1) * 6]
-        for _, book in row_books.iterrows():
-            book_id = int(book["id"])
-            title = escape(str(book["title"])[:10])
-            rating = float(book["rating"])
-            stars = chr(9733) * round(rating / 2) + chr(9734) * (5 - round(rating / 2))
-            selected = st.session_state.home_detail_bid == book_id
-            highlight = "border: 3px solid #667eea;" if selected else ""
-            data_uri = _cover_data_uri(book_id, cover_dir, verified_covers)
-            if data_uri:
-                image_html = f'<img src="{data_uri}" class="hc-img">'
-            else:
-                image_html = '<div class="hc-img hc-placeholder">📕</div>'
-            cards_html += (
-                '<div class="hc-card" style="{0}">{1}<div class="hc-body">'
-                '<div class="hc-title">{2}</div><div class="hc-rating">{3} {4:.1f}</div>'
-                "</div></div>"
-            ).format(highlight, image_html, title, stars, rating)
-        cards_html += "</div>"
-        st.markdown(cards_html, unsafe_allow_html=True)
-
-        cols = st.columns(6)
-        for col, (_, book) in zip(cols, row_books.iterrows()):
-            book_id = int(book["id"])
-            with col:
+    with st.container(key="home_featured_grid"):
+        for row_start in range(0, len(books), 6):
+            row_books = books.iloc[row_start : row_start + 6]
+            cols = st.columns(6)
+            for position, (col, (_, book)) in enumerate(
+                zip(cols, row_books.iterrows()), start=row_start
+            ):
+                book_id = int(book["id"])
+                title = escape(str(book["title"])[:16])
+                rating = float(book["rating"])
+                stars = chr(9733) * round(rating / 2) + chr(9734) * (5 - round(rating / 2))
                 selected = st.session_state.home_detail_bid == book_id
-                label = "🔼 收起" if selected else "📖 详情"
-                if st.button(label, key=f"hbtn_{book_id}", use_container_width=True):
-                    st.session_state.home_detail_bid = None if selected else book_id
-                    st.rerun()
+                highlight = "border: 3px solid #667eea;" if selected else ""
+                data_uri = _cover_data_uri(book_id, cover_dir, verified_covers)
+                loading = "eager" if position < 6 else "lazy"
+                if data_uri:
+                    image_html = (
+                        f'<img src="{data_uri}" class="hc-img" alt="{title}" '
+                        f'loading="{loading}">'
+                    )
+                else:
+                    image_html = '<div class="hc-img hc-placeholder">📕</div>'
+                with col:
+                    st.markdown(
+                        (
+                            '<div class="hc-card" style="{0}">{1}<div class="hc-body">'
+                            '<div class="hc-title" title="{2}">{2}</div>'
+                            '<div class="hc-rating">{3} {4:.1f}</div></div></div>'
+                        ).format(highlight, image_html, title, stars, rating),
+                        unsafe_allow_html=True,
+                    )
+                    label = "🔼 收起" if selected else "📖 详情"
+                    if st.button(label, key=f"hbtn_{book_id}", use_container_width=True):
+                        st.session_state.home_detail_bid = None if selected else book_id
+                        st.rerun()
 
 
 def _render_selected_book(
@@ -256,38 +314,36 @@ def _render_selected_book(
         st.markdown("> {0}".format(desc[:500]))
 
 
-def _render_navigation(pub_stats, auth_stats, rating_metrics):
+def _render_navigation(summary, rating_metrics):
     st.markdown("### 🚀 探索更多功能")
-    columns = st.columns(4)
-    publisher_count = len(pub_stats) if pub_stats is not None else "?"
-    author_count = len(auth_stats) if auth_stats is not None else "?"
-    nav_data = [
-        (columns[0], "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
-        (columns[1], "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
-        (columns[2], "🏢", "出版社与作者", f"{publisher_count}社+{author_count}位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
-        (columns[3], "🔮", "评分预测", "R²={0:.2f}".format(rating_metrics.get("R2", 0.52)), "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
-    ]
-    for col, icon, title, description, color1, color2, target, button_text, button_key in nav_data:
-        with col:
-            st.markdown(
-                """<div class="nav-card" style="background:linear-gradient(135deg,{0},{1});">
-                    <div class="nav-card-icon">{2}</div>
-                    <div class="nav-card-title" style="color:white;">{3}</div>
-                    <div class="nav-card-desc" style="color:rgba(255,255,255,0.85);">{4}</div>
-                </div>""".format(color1, color2, icon, title, description),
-                unsafe_allow_html=True,
-            )
-            if st.button(button_text, key=button_key, use_container_width=True):
-                st.session_state.current_page = target
-                st.rerun()
+    publisher_count = summary.get("publisher_count", "?")
+    author_count = summary.get("author_count", "?")
+    with st.container(key="home_navigation"):
+        columns = st.columns(4)
+        nav_data = [
+            (columns[0], "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
+            (columns[1], "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
+            (columns[2], "🏢", "出版社与作者", f"{publisher_count}社+{author_count}位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
+            (columns[3], "🔮", "评分预测", "R²={0:.2f}".format(rating_metrics.get("R2", 0.52)), "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
+        ]
+        for col, icon, title, description, color1, color2, target, button_text, button_key in nav_data:
+            with col:
+                st.markdown(
+                    """<div class="nav-card" style="background:linear-gradient(135deg,{0},{1});">
+                        <div class="nav-card-icon">{2}</div>
+                        <div class="nav-card-title" style="color:white;">{3}</div>
+                        <div class="nav-card-desc" style="color:rgba(255,255,255,0.85);">{4}</div>
+                    </div>""".format(color1, color2, icon, title, description),
+                    unsafe_allow_html=True,
+                )
+                if st.button(button_text, key=button_key, use_container_width=True):
+                    st.session_state.current_page = target
+                    st.rerun()
 
 
 def show(
     df,
-    rec,
-    pub_stats,
-    auth_stats,
-    descriptions,
+    summary,
     cover_map,
     cover_dir,
     verified_covers,
@@ -308,7 +364,7 @@ def show(
         ),
         unsafe_allow_html=True,
     )
-    _render_stats(df, rec, pub_stats, auth_stats, descriptions, cover_map, sub_color)
+    _render_stats(summary, sub_color)
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown("### 📖 精选高分图书")
@@ -325,6 +381,6 @@ def show(
     )
 
     st.markdown("---")
-    _render_navigation(pub_stats, auth_stats, rating_metrics)
+    _render_navigation(summary, rating_metrics)
     st.markdown("---")
     st.caption("江南大学 · 大学生创新训练计划项目 | 豆瓣读书公开数据集")

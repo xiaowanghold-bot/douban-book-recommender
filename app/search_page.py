@@ -25,7 +25,15 @@ QUICK_TAGS = [
 ]
 
 
-def show(rec, cover_map, cover_dir, verified_covers, get_detail_info, get_desc):
+def show(
+    rec,
+    tag_to_ids,
+    cover_map,
+    cover_dir,
+    verified_covers,
+    get_detail_info,
+    get_desc,
+):
     """渲染图书搜索、详情及两类推荐结果。"""
     st.title("🔍 搜书 & 智能推荐")
 
@@ -51,30 +59,62 @@ def show(rec, cover_map, cover_dir, verified_covers, get_detail_info, get_desc):
     if not search_term:
         return
 
+    allowed_ids = None if tag_sel == "全部" else tag_to_ids.get(tag_sel, set())
+    if allowed_ids is not None and not allowed_ids:
+        st.warning("当前数据中没有「{0}」标签图书".format(tag_sel))
+        return
+
     with st.spinner("搜索中..."):
-        results = rec.recommend_by_title(search_term, top_n=20)
+        results = rec.recommend_by_title(
+            search_term,
+            top_n=20,
+            allowed_ids=allowed_ids,
+        )
 
     if results.empty:
         st.warning("未找到相关图书，请尝试其他关键词")
         return
 
-    st.caption("🔍 找到 {0} 本匹配图书：".format(len(results)))
-    match_cols = st.columns(4)
-    for i, (_, match) in enumerate(results.iterrows()):
-        with match_cols[i % 4]:
-            render_cover(match["id"], cover_map, cover_dir, verified_covers, width=110)
-            btn_label = "{0} ⭐{1:.1f}".format(str(match["title"])[:22], match["rating"])
-            if st.button(
-                btn_label,
-                key="suggest_{0}".format(match["id"]),
-                use_container_width=True,
-                help="{0:,}人评价".format(int(match["votes"])),
-            ):
-                st.session_state.selected_book_id = int(match["id"])
-                st.session_state.selected_book_title = match["title"]
-                st.session_state.selected_book_rating = match["rating"]
-                st.session_state.selected_book_votes = match["votes"]
-                st.rerun()
+    if allowed_ids is None:
+        st.caption("🔍 找到 {0} 本匹配图书".format(len(results)))
+    else:
+        st.caption(
+            "🔍 在 {0:,} 本「{1}」标签图书中找到 {2} 本匹配结果".format(
+                len(allowed_ids), tag_sel, len(results)
+            )
+        )
+
+    st.markdown(
+        """<style>
+        @media (max-width: 720px) {
+            .st-key-search_results_grid [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+            .stApp .st-key-search_results_grid [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                flex: 1 1 calc(50% - 0.75rem) !important;
+                min-width: calc(50% - 0.75rem) !important;
+                width: calc(50% - 0.75rem) !important;
+                max-width: calc(50% - 0.75rem) !important;
+            }
+        }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+    with st.container(key="search_results_grid"):
+        match_cols = st.columns(4)
+        for i, (_, match) in enumerate(results.iterrows()):
+            with match_cols[i % 4]:
+                render_cover(match["id"], cover_map, cover_dir, verified_covers, width=110)
+                btn_label = "{0} ⭐{1:.1f}".format(str(match["title"])[:22], match["rating"])
+                if st.button(
+                    btn_label,
+                    key="suggest_{0}".format(match["id"]),
+                    use_container_width=True,
+                    help="{0:,}人评价".format(int(match["votes"])),
+                ):
+                    st.session_state.selected_book_id = int(match["id"])
+                    st.session_state.selected_book_title = match["title"]
+                    st.session_state.selected_book_rating = match["rating"]
+                    st.session_state.selected_book_votes = match["votes"]
+                    st.rerun()
 
     if not st.session_state.get("selected_book_id"):
         return

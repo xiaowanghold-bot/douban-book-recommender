@@ -10,13 +10,13 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from components import render_cover
 from data_loader import (
     COVER_DIR,
     FIG_DIR,
     get_cover_path,
     get_description,
     get_detail_info as find_detail_info,
+    load_app_summary,
     load_author_stats,
     load_coldstart_model_meta,
     load_coldstart_predictor,
@@ -33,13 +33,6 @@ from data_loader import (
     load_tag_index,
     load_verified_covers,
 )
-from utils import dedup_editions
-from genre_search import search_books_by_genre, GENRE_GROUPS
-from coldstart_page import show as show_coldstart
-from home_page import show as show_home
-from rating_page import show as show_rating
-from search_page import show as show_search
-
 st.set_page_config(
     page_title="豆瓣图书评价与推荐系统",
     page_icon="📚",
@@ -47,27 +40,26 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-rec = load_recommender()
-df = load_scored_data()
-tag_to_ids, top_tags_list = load_tag_index()
-genre_text_index = load_genre_index(df)
-detail_df = load_detail_data()
-descriptions = load_descriptions()
-cover_map = load_cover_map()
-pub_stats = load_pub_stats()
-auth_stats = load_author_stats()
+app_summary = load_app_summary()
 rating_metrics = load_rating_model_meta().get("metrics", {})
 coldstart_metrics = load_coldstart_model_meta().get("metrics", {})
-VERIFIED_COVERS = load_verified_covers()
 
-get_detail_info = partial(find_detail_info, detail_df)
-get_desc = partial(get_description, descriptions)
-get_cover = partial(
-    get_cover_path,
-    cover_map=cover_map,
-    cover_dir=COVER_DIR,
-    verified_covers=VERIFIED_COVERS,
-)
+
+def load_book_display_context():
+    """仅在需要图书详情或封面的页面加载展示数据。"""
+    detail_df = load_detail_data()
+    descriptions = load_descriptions()
+    cover_map = load_cover_map()
+    verified_covers = load_verified_covers()
+    get_detail_info = partial(find_detail_info, detail_df)
+    get_desc = partial(get_description, descriptions)
+    get_cover = partial(
+        get_cover_path,
+        cover_map=cover_map,
+        cover_dir=COVER_DIR,
+        verified_covers=verified_covers,
+    )
+    return cover_map, verified_covers, get_detail_info, get_desc, get_cover
 
 # ========== 深色模式 ==========
 if "dark_mode" not in st.session_state:
@@ -129,10 +121,10 @@ with st.sidebar:
         st.rerun()
     
     st.sidebar.markdown("---")
-    st.sidebar.caption("收录图书: {0:,} 本".format(len(df)))
-    st.sidebar.caption("详细信息: {0:,} 本".format(len(detail_df) if detail_df is not None else 0))
-    st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
-    st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
+    st.sidebar.caption("收录图书: {0:,} 本".format(app_summary.get("book_count", 0)))
+    st.sidebar.caption("详细信息: {0:,} 本".format(app_summary.get("detail_count", 0)))
+    st.sidebar.caption("图书简介: {0:,} 本".format(app_summary.get("description_count", 0)))
+    st.sidebar.caption("封面图片: {0:,} 张".format(app_summary.get("cover_count", 0)))
     st.sidebar.caption("推荐引擎: jieba 语义 TF-IDF + Cosine")
     st.sidebar.caption(
         "评分预测: RF RMSE={0:.2f} | 冷启动: GBR R²={1:.2f}".format(
@@ -146,15 +138,18 @@ with st.sidebar:
 #  首页
 # ======================================================================
 if page == "🏠 首页":
+    from home_page import show as show_home
+
+    df = load_scored_data()
+    cover_map, verified_covers, get_detail_info, get_desc, _ = (
+        load_book_display_context()
+    )
     show_home(
         df,
-        rec,
-        pub_stats,
-        auth_stats,
-        descriptions,
+        app_summary,
         cover_map,
         COVER_DIR,
-        VERIFIED_COVERS,
+        verified_covers,
         get_detail_info,
         get_desc,
         rating_metrics,
@@ -164,6 +159,9 @@ if page == "🏠 首页":
 #  排行榜
 # ======================================================================
 elif page == "🏆 排行榜":
+    from utils import dedup_editions
+
+    df = load_scored_data()
     st.title("🏆 贝叶斯加权评分排行榜")
     st.markdown("*IMDb式贝叶斯平均算法 — 平衡评分高低与评价人数*")
 
@@ -271,11 +269,19 @@ elif page == "🏆 排行榜":
         csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
         st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
 elif page == "🔍 搜书推荐":
+    from search_page import show as show_search
+
+    rec = load_recommender()
+    tag_to_ids, _ = load_tag_index()
+    cover_map, verified_covers, get_detail_info, get_desc, _ = (
+        load_book_display_context()
+    )
     show_search(
         rec,
+        tag_to_ids,
         cover_map,
         COVER_DIR,
-        VERIFIED_COVERS,
+        verified_covers,
         get_detail_info,
         get_desc,
     )
@@ -284,11 +290,12 @@ elif page == "🔍 搜书推荐":
 #  出版社与作者
 # ======================================================================
 elif page == "🏢 出版社与作者":
+    pub_stats = load_pub_stats()
+    auth_stats = load_author_stats()
     st.title("🏢 出版社与作者分析")
     st.markdown("*基于爬虫获取的 6,575 本高分图书详细信息*")
     st.caption("综合评分采用与图书排行榜一致的贝叶斯收缩(m=P75)，避免小样本出版社/作者因少量高分书虚高。")
 
-    pub_stats = load_pub_stats()
     if pub_stats is not None:
         st.markdown("### 📚 出版社综合评价")
         c1, c2 = st.columns(2)
@@ -305,7 +312,6 @@ elif page == "🏢 出版社与作者":
         if (FIG_DIR / "10_publisher_matrix.png").exists():
             st.image(str(FIG_DIR / "10_publisher_matrix.png"), use_container_width=True)
 
-    auth_stats = load_author_stats()
     if auth_stats is not None:
         st.markdown("---")
         st.markdown("### ✍️ 作者影响力")
@@ -332,6 +338,8 @@ elif page == "🏢 出版社与作者":
 #  评分预测 (REFORMED: prediction-first layout)
 # ======================================================================
 elif page == "🔮 评分预测":
+    from rating_page import show as show_rating
+
     show_rating(load_predictor(), rating_metrics)
 
 # ======================================================================
@@ -367,10 +375,21 @@ elif page == "💡 更多发现":
 # ======================================================================
 
 elif page == "🧊 新书预测":
+    from coldstart_page import show as show_coldstart
+
     csp = load_coldstart_predictor()
     show_coldstart(csp)
 
 elif page == "🏷️ 标签浏览":
+    from components import render_cover
+    from genre_search import GENRE_GROUPS, search_books_by_genre
+    from utils import dedup_editions
+
+    df = load_scored_data()
+    genre_text_index = load_genre_index(df)
+    cover_map, verified_covers, get_detail_info, get_desc, get_cover = (
+        load_book_display_context()
+    )
     st.title("🏷️ 标签分类浏览")
     st.markdown("*基于真实豆瓣用户标签 + 语义搜索的流派图书探索*")
 
@@ -436,7 +455,7 @@ elif page == "🏷️ 标签浏览":
                 desc2 = get_desc(bid2)
                 dc1, dc2 = st.columns([1, 3])
                 with dc1:
-                    render_cover(bid2, cover_map, COVER_DIR, VERIFIED_COVERS, width=120)
+                    render_cover(bid2, cover_map, COVER_DIR, verified_covers, width=120)
                 with dc2:
                     st.markdown(f"**{st.session_state.get('selected_book_title', '')}**")
                     st.caption(f"⭐{st.session_state.get('selected_book_rating', 0):.1f} | {int(st.session_state.get('selected_book_votes', 0)):,}人")
@@ -467,12 +486,12 @@ elif page == "📋 关于项目":
 ### 技术方案
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
 - **内容推荐引擎**：jieba 语义 TF-IDF + 余弦相似度，融合书名/标签/作者/简介，去重同书名
-- **出版社/作者分析**：{len(pub_stats) if pub_stats is not None else "?"} 家出版社、{len(auth_stats) if auth_stats is not None else "?"} 位作者综合评价矩阵
+- **出版社/作者分析**：{app_summary.get("publisher_count", "?")} 家出版社、{app_summary.get("author_count", "?")} 位作者综合评价矩阵
 - **评分预测**：RandomForest 回归 (RMSE {rating_metrics.get("RMSE", 0):.3f}, OOF目标编码)；冷启动：GradientBoosting v4 (10维OOF特征, 测试R²={coldstart_metrics.get("R2", 0):.3f})
 
 ### 数据来源
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)
-- 288,824 本基础数据 + {len(detail_df[detail_df["crawl_status"]=="success"]) if detail_df is not None else "?"} 本爬虫详细信息
+- 288,824 本基础数据 + {app_summary.get("detail_success_count", "?")} 本爬虫详细信息
 - 481 个豆列 + 897 个标签
 
 ### 技术栈

@@ -36,6 +36,7 @@ class BookRecommender:
         self.vectorizer = None
         self.id_to_idx = {}
         self.idx_to_id = {}
+        self._normalized_titles = None
 
         self._tags = {}
         self._descriptions = {}
@@ -203,9 +204,7 @@ class BookRecommender:
         books_path = self.model_dir / "books_for_rec.csv"
         if books_path.exists():
             self.df = pd.read_csv(books_path, encoding="utf-8-sig")
-            for idx, book_id in enumerate(self.df["id"]):
-                self.id_to_idx[int(book_id)] = idx
-                self.idx_to_id[idx] = int(book_id)
+            self._rebuild_lookup_indexes()
         # Load NN model (evaluate.py recomputes distances/indices on demand)
         nn_pkl = self.model_dir / "nn_neighbors.pkl"
         if nn_pkl.exists():
@@ -216,6 +215,37 @@ class BookRecommender:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
                 self.mode = meta.get("mode", "char")
+
+    @staticmethod
+    def _normalize_title(title):
+        return re.sub(r"[\W_]+", "", str(title).casefold())
+
+    def _rebuild_lookup_indexes(self):
+        """让模型矩阵行号成为唯一查找入口，避免推荐循环反复扫描 DataFrame。"""
+        self.id_to_idx = {
+            int(book_id): idx for idx, book_id in enumerate(self.df["id"])
+        }
+        self.idx_to_id = {idx: book_id for book_id, idx in self.id_to_idx.items()}
+        self._normalized_titles = np.asarray(
+            [self._normalize_title(title) for title in self.df["title"]],
+            dtype=object,
+        )
+
+    @staticmethod
+    def _top_indices(scores, candidate_indices, count):
+        """从候选集合中取 Top-K，仅排序最终候选而非完整图书库。"""
+        if count <= 0 or len(candidate_indices) == 0:
+            return np.asarray([], dtype=np.intp)
+        count = min(count, len(candidate_indices))
+        candidate_scores = scores[candidate_indices]
+        if count == len(candidate_indices):
+            local_indices = np.argsort(candidate_scores)[::-1]
+        else:
+            local_indices = np.argpartition(candidate_scores, -count)[-count:]
+            local_indices = local_indices[
+                np.argsort(candidate_scores[local_indices])[::-1]
+            ]
+        return candidate_indices[local_indices]
 
     def recommend_by_id(self, book_id, top_n=10):
         if self.nn_model is None:
@@ -232,7 +262,7 @@ class BookRecommender:
         results = []
         for dist, nidx in zip(distances[0][1:], indices[0][1:]):
             rec_id = self.idx_to_id[nidx]
-            row = self.df[self.df["id"] == rec_id].iloc[0]
+            row = self.df.iloc[nidx]
             title = row["title"]
             if title in seen_titles:
                 continue
@@ -247,7 +277,8 @@ class BookRecommender:
                 break
         return pd.DataFrame(results)
 
-    def recommend_by_title(self, query, top_n=10):
+    def recommend_by_title(self, query, top_n=10, allowed_ids=None):
+        """按语义搜索图书，可选用真实标签对应的图书 ID 集合作为候选范围。"""
         if self.vectorizer is None:
             self._load_artifacts()
         if self.mode == "semantic":
@@ -259,13 +290,41 @@ class BookRecommender:
         query_vec = self.vectorizer.transform([tokens])
         from sklearn.metrics.pairwise import cosine_similarity
         sims = cosine_similarity(query_vec, self.tfidf_matrix)[0]
-        search_range = min(top_n * 8, len(sims))
-        top_indices = np.argsort(sims)[::-1][:search_range]
+        if allowed_ids is None:
+            candidate_indices = np.arange(len(sims), dtype=np.intp)
+        else:
+            candidate_indices = np.fromiter(
+                (
+                    self.id_to_idx[int(book_id)]
+                    for book_id in allowed_ids
+                    if int(book_id) in self.id_to_idx
+                ),
+                dtype=np.intp,
+            )
+        if len(candidate_indices) == 0:
+            return pd.DataFrame()
+
+        search_range = min(max(top_n * 8, top_n), len(candidate_indices))
+        top_indices = self._top_indices(sims, candidate_indices, search_range)
+
+        # 书名完全匹配属于用户最明确的意图，应优先于模糊语义结果。
+        if self._normalized_titles is None:
+            self._rebuild_lookup_indexes()
+        normalized_query = self._normalize_title(query)
+        exact_indices = candidate_indices[
+            self._normalized_titles[candidate_indices] == normalized_query
+        ]
+        if len(exact_indices):
+            exact_indices = exact_indices[np.argsort(sims[exact_indices])[::-1]]
+            top_indices = np.concatenate(
+                [exact_indices, top_indices[~np.isin(top_indices, exact_indices)]]
+            )
+
         seen_titles = set()
         results = []
         for nidx in top_indices:
             rec_id = self.idx_to_id[nidx]
-            row = self.df[self.df["id"] == rec_id].iloc[0]
+            row = self.df.iloc[nidx]
             title = row["title"]
             if title in seen_titles:
                 continue

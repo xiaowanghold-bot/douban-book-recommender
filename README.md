@@ -138,6 +138,7 @@ python -m src.analysis            # 出版社/作者统计
 python -m src.recommendation      # jieba TF-IDF 向量 + NN 索引
 python -m src.enhancements        # 词云/价格/评分预测模型
 python -m src.coldstart_predictor # 冷启动预测模型
+python -m src.app_summary         # 生成首页轻量统计快照
 
 # 启动应用
 streamlit run app/main.py

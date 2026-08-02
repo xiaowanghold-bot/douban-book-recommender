@@ -10,7 +10,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from data_loader import get_cover_path, get_description, get_detail_info  # noqa: E402
+from data_loader import (  # noqa: E402
+    get_cover_path,
+    get_description,
+    get_detail_info,
+    load_app_summary,
+)
+from app_summary import build_app_summary  # noqa: E402
 from home_page import select_featured_books  # noqa: E402
 
 
@@ -48,6 +54,27 @@ def test_get_cover_path_only_returns_verified_cover(tmp_path):
 
     assert get_cover_path(42, {}, tmp_path, {42}) == str(cover)
     assert get_cover_path(42, {}, tmp_path, set()) is None
+
+
+def test_app_summary_contains_sidebar_and_home_metrics():
+    summary = load_app_summary()
+
+    expected_fields = {
+        "book_count",
+        "average_rating",
+        "detail_count",
+        "description_count",
+        "cover_count",
+        "publisher_count",
+        "author_count",
+        "recommendation_count",
+    }
+    assert expected_fields <= summary.keys()
+    assert summary["book_count"] >= summary["recommendation_count"] > 0
+
+
+def test_app_summary_matches_generated_data_sources():
+    assert load_app_summary() == build_app_summary()
 
 
 def test_featured_books_prioritize_verified_quality_covers(tmp_path):
