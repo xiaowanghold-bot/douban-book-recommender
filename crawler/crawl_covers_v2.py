@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-import requests, re, time, os, random, json, sys
+import requests
+import time
+import random
+import json
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
@@ -59,7 +62,7 @@ def download_cover_cdn(book_id):
             if r.status_code == 200 and len(r.content) > MIN_IMAGE_SIZE:
                 if b'default' not in r.content[:200].lower():
                     return r.content, 'jpg'
-        except:
+        except requests.RequestException:
             continue
     for ext in ['png', 'webp']:
         for server in [1, 2, 3, 9]:
@@ -68,7 +71,7 @@ def download_cover_cdn(book_id):
                 r = requests.get(url, headers=HEADERS, timeout=10)
                 if r.status_code == 200 and len(r.content) > MIN_IMAGE_SIZE:
                     return r.content, ext
-            except:
+            except requests.RequestException:
                 continue
     return None, None
 

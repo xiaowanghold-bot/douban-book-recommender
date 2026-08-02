@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-import pandas as pd
 """
 流派搜索模块 - 关键词匹配 + 评分排序
 """
 import json
-import numpy as np
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 
 GENRE_KEYWORDS = {
     "小说":     ["小说", "故事"],
@@ -52,7 +51,6 @@ GENRE_GROUPS = {
 
 def build_genre_search_index(df, desc_json_path="data/processed/book_descriptions.json"):
     """预构建文本索引"""
-    import json
     descs = {}
     if Path(desc_json_path).exists():
         with open(desc_json_path, "r", encoding="utf-8") as f:

@@ -55,7 +55,7 @@ def setup_chinese_font():
 
 def dedup_editions(df):
     """Remove duplicate editions: normalize title + author group, keep most voted."""
-    import re, pandas as pd
+    import re
     if df is None or df.empty:
         return df
     d = df.copy()

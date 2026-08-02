@@ -1,4 +1,10 @@
-import requests, re, time, random, json, os, sys
+import requests
+import re
+import time
+import random
+import json
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -51,7 +57,7 @@ def try_download_image(session, cover_url, referer):
                 ct = r.headers.get("content-type", "")
                 if "image" in ct or len(r.content) > 10000:
                     return r.content, url
-        except:
+        except requests.RequestException:
             continue
     return None, None
 

@@ -5,7 +5,6 @@
 import pandas as pd
 import numpy as np
 import re
-import os
 from pathlib import Path
 
 
@@ -146,7 +145,7 @@ class BookDataCleaner:
             labels=["<6", "6-7", "7-8", "8-9", "9-10"]
         )
         
-        print(f"  衍生特征: log_votes, score_popularity, votes_tier, rating_tier")
+        print("  衍生特征: log_votes, score_popularity, votes_tier, rating_tier")
         
         # 如果有详细数据，做更多特征
         if self.df_detail is not None and len(self.df_detail) > 0:
@@ -158,7 +157,7 @@ class BookDataCleaner:
                 bins=[0, 20, 30, 40, 50, 80, 200, float("inf")],
                 labels=["<20", "20-30", "30-40", "40-50", "50-80", "80-200", ">200"]
             )
-            print(f"  详细特征: decade, price_tier")
+            print("  详细特征: decade, price_tier")
         
         return self
     

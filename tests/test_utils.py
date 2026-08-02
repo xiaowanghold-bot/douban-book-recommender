@@ -1,5 +1,6 @@
 """Unit test for bayesian_shrink."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from utils import bayesian_shrink
 

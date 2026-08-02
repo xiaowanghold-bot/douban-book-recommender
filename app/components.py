@@ -3,7 +3,6 @@
 
 import streamlit as st
 import base64
-from pathlib import Path
 
 
 def render_cover(book_id, cover_map, cover_dir, verified_covers, width=110):

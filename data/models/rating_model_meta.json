@@ -1,0 +1,27 @@
+{
+  "artifact_version": 3,
+  "model": "RandomForestRegressor",
+  "encoding": "5-fold OOF target means",
+  "feature_names": [
+    "price",
+    "year",
+    "pages",
+    "votes_log",
+    "author_mean",
+    "publisher_mean",
+    "binding_mean"
+  ],
+  "metrics": {
+    "RMSE": 0.5012519246348603,
+    "MAE": 0.37291661493615597,
+    "R2": 0.5201708553998663,
+    "CV_R2": 0.45689788430445033,
+    "CV_R2_std": 0.025767287042479648,
+    "author_baseline_RMSE": 0.5514680694571253,
+    "author_baseline_MAE": 0.40413172295017585,
+    "n_samples": 6357,
+    "n_train": 5085,
+    "n_test": 1272,
+    "encoding": "5-fold OOF target means"
+  }
+}

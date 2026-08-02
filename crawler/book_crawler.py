@@ -9,7 +9,6 @@ import random
 import csv
 import os
 from pathlib import Path
-import sys
 from datetime import datetime
 
 # ========== 配置区 ==========
@@ -236,7 +235,7 @@ def crawl():
     save_progress(end)
     
     print(f"\n{'=' * 60}")
-    print(f"  爬取完成!")
+    print("  爬取完成!")
     print(f"  成功: {success_count}  失败: {fail_count}")
     print(f"  数据保存至: {OUTPUT_FILE}")
     print(f"  完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

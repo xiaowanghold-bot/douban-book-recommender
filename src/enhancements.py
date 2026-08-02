@@ -11,12 +11,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import re
 from pathlib import Path
+import json
 import pickle
 import warnings
-from pathlib import Path
-warnings.filterwarnings("ignore")
 
+from src.rating_predictor import (
+    build_rating_features,
+)
+from src.rating_training import prepare_rating_dataframe, train_rating_model
 from src.utils import setup_chinese_font, _CJK_FONT_CANDIDATES
+
+warnings.filterwarnings("ignore")
 setup_chinese_font()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -105,7 +110,8 @@ class PriceAnalyzer:
 
     @staticmethod
     def _parse(text):
-        if pd.isna(text): return np.nan
+        if pd.isna(text):
+            return np.nan
         m = re.search(r"[\d.]+", str(text))
         return float(m.group()) if m else np.nan
 
@@ -196,29 +202,10 @@ class RatingPredictor:
     def load_and_prepare(self):
         """加载数据并做特征工程"""
         print("\n[评分预测] 加载数据...")
-        df = pd.read_csv(DATA_DIR / "raw" / "Books_detail.csv", encoding="utf-8-sig")
-        df = df[df["crawl_status"] == "success"].copy()
-
-        # 解析数字字段
-        df["price_num"] = df["price"].apply(PriceAnalyzer._parse)
-        df["year_num"] = df["pub_year"].apply(
-            lambda x: int(re.search(r"(19|20)\d{2}", str(x)).group())
-            if pd.notna(x) and re.search(r"(19|20)\d{2}", str(x)) else np.nan)
-        df["pages_num"] = df["pages"].apply(
-            lambda x: int(re.search(r"\d+", str(x)).group())
-            if pd.notna(x) and re.search(r"\d+", str(x)) else np.nan)
-
-        # 清洗分类字段
-        df["author_clean"] = df["author"].apply(
-            lambda x: re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(x)).strip()[:30]
-            if pd.notna(x) else "未知")
-        df["publisher_clean"] = df["publisher"].fillna("未知").astype(str).str[:20]
-        df["binding_type"] = df["binding"].fillna("未知").apply(
-            lambda x: "平装" if "平装" in str(x) else ("精装" if "精装" in str(x) else "其他"))
-
-        # 选择特征和目标
-        df = df.dropna(subset=["Rating", "price_num", "year_num", "pages_num"]).copy()
-        df = df[df["year_num"].between(1950, 2025)]
+        detail = pd.read_csv(
+            DATA_DIR / "raw" / "Books_detail.csv", encoding="utf-8-sig"
+        )
+        df = prepare_rating_dataframe(detail)
 
         self.df = df
         print(f"  训练数据: {len(df):,} 条")
@@ -227,66 +214,28 @@ class RatingPredictor:
         return self
 
     def train(self):
-        """训练评分预测模型（v2: train-only 均值替代 LabelEncoder）"""
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.model_selection import cross_val_score, train_test_split
-        from sklearn.metrics import mean_absolute_error, r2_score
+        """训练评分预测模型（v3: OOF 目标均值编码）"""
+        print("\n[评分预测] 训练模型 (v3: OOF target means)...")
 
-        print("\n[评分预测] 训练模型 (v2: train-only means)...")
+        result = train_rating_model(self.df)
+        self.model = result["model"]
+        self.encoders = result["encoders"]
+        self.feature_names = result["feature_names"]
+        self.metrics = result["metrics"]
+        y_test = result["test_df"]["Rating"].values
+        y_pred = result["test_predictions"]
 
-        df = self.df.copy()
-        y = df["Rating"].values
-
-        # Train/test split
-        train_idx, test_idx = train_test_split(np.arange(len(df)), test_size=0.2, random_state=42)
-
-        # Train-only means
-        train_df = df.iloc[train_idx]
-        global_mean = float(y[train_idx].mean())
-        author_means = train_df.groupby("author_clean")["Rating"].mean().to_dict()
-        publisher_means = train_df.groupby("publisher_clean")["Rating"].mean().to_dict()
-        binding_means = train_df.groupby("binding_type")["Rating"].mean().to_dict()
-
-        features = pd.DataFrame({
-            "price": df["price_num"].values,
-            "year": df["year_num"].values,
-            "pages": df["pages_num"].fillna(df["pages_num"].median()).values,
-            "votes_log": np.log1p(df["Votes"].values),
-            "author_mean": df["author_clean"].map(author_means).fillna(global_mean).values,
-            "publisher_mean": df["publisher_clean"].map(publisher_means).fillna(global_mean).values,
-            "binding_mean": df["binding_type"].map(binding_means).fillna(global_mean).values,
-        })
-
-        self.feature_names = list(features.columns)
-        self.encoders = {
-            "author_means": author_means,
-            "publisher_means": publisher_means,
-            "binding_means": binding_means,
-            "global_mean": global_mean,
-        }
-
-        X = features.values
-        X_train = X[train_idx]
-        y_train = y[train_idx]
-
-        self.model = RandomForestRegressor(
-            n_estimators=100, max_depth=12, min_samples_leaf=5,
-            random_state=42, n_jobs=-1,
+        print(
+            f"  训练集: {self.metrics['n_train']}, "
+            f"测试集: {self.metrics['n_test']}"
         )
-        self.model.fit(X_train, y_train)
-
-        X_test = X[test_idx]
-        y_test = y[test_idx]
-        y_pred = self.model.predict(X_test)
-        self.metrics["MAE"] = mean_absolute_error(y_test, y_pred)
-        self.metrics["R2"] = r2_score(y_test, y_pred)
-        cv_scores = cross_val_score(self.model, X_train, y_train, cv=5, scoring="r2")
-        self.metrics["CV_R2"] = cv_scores.mean()
-
-        print(f"  训练集: {len(train_idx)}, 测试集: {len(test_idx)}")
-        print(f"  MAE (test): {self.metrics['MAE']:.3f}")
-        print(f"  R2  (test): {self.metrics['R2']:.3f}")
-        print(f"  CV5 (train): {self.metrics['CV_R2']:.3f}")
+        print(f"  RMSE (test): {self.metrics['RMSE']:.3f}")
+        print(f"  MAE  (test): {self.metrics['MAE']:.3f}")
+        print(f"  R2   (test): {self.metrics['R2']:.3f}")
+        print(
+            f"  CV5  (nested): {self.metrics['CV_R2']:.3f} "
+            f"± {self.metrics['CV_R2_std']:.3f}"
+        )
 
         importances = self.model.feature_importances_
         indices = np.argsort(importances)[::-1]
@@ -302,12 +251,26 @@ class RatingPredictor:
         model_dir.mkdir(parents=True, exist_ok=True)
         with open(model_dir / "rating_predictor.pkl", "wb") as f:
             pickle.dump({
+                "artifact_version": 3,
                 "model": self.model,
                 "encoders": self.encoders,
                 "feature_names": self.feature_names,
                 "metrics": self.metrics,
             }, f)
-        print(f"  [保存] rating_predictor.pkl")
+        with open(model_dir / "rating_model_meta.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "artifact_version": 3,
+                    "model": "RandomForestRegressor",
+                    "encoding": "5-fold OOF target means",
+                    "feature_names": self.feature_names,
+                    "metrics": self.metrics,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+        print("  [保存] rating_predictor.pkl")
 
         return self
     def _plot_feature_importance(self, importances, indices):
@@ -346,28 +309,20 @@ class RatingPredictor:
         print("  [图表16] 预测散点图")
 
     def predict(self, price, year, pages, votes, author="未知", publisher="未知", binding="平装"):
-        """单条预测（v2: train-only means）"""
+        """使用 v3 OOF 训练产物执行单条预测。"""
         if self.model is None:
             return None
 
-        author_clean = re.sub(r"\[.*?\]|\(.*?\)|（.*?）", "", str(author)).strip()[:30]
-        publisher_clean = str(publisher).strip()[:20]
-        binding_type = "平装" if "平装" in str(binding) else ("精装" if "精装" in str(binding) else "其他")
-
-        gm = self.encoders.get("global_mean", 8.0)
-        author_mean = self.encoders.get("author_means", {}).get(author_clean, gm)
-        publisher_mean = self.encoders.get("publisher_means", {}).get(publisher_clean, gm)
-        binding_mean = self.encoders.get("binding_means", {}).get(binding_type, gm)
-
-        features = {
-            "price": price,
-            "year": year,
-            "pages": pages,
-            "votes_log": np.log1p(votes),
-            "author_mean": author_mean,
-            "publisher_mean": publisher_mean,
-            "binding_mean": binding_mean,
-        }
+        features = build_rating_features(
+            self.encoders,
+            price=price,
+            year=year,
+            pages=pages,
+            votes=votes,
+            author=author,
+            publisher=publisher,
+            binding=binding,
+        )
 
         X = np.array([[features[n] for n in self.feature_names]])
         return float(self.model.predict(X)[0])
@@ -389,7 +344,7 @@ if __name__ == "__main__":
     pa = PriceAnalyzer()
     pa.load().analyze()
     best = pa.get_best_value(max_price=50, min_rating=9.0)
-    print(f"\n[性价比] Top 5 高性价比图书:")
+    print("\n[性价比] Top 5 高性价比图书:")
     for _, row in best.head(5).iterrows():
         print(f"  {row['Title'][:25]:<28s} {row['Rating']:.1f}分 {row['price_num']:.1f}元 {row['author'][:15]}")
 

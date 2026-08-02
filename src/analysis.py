@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import re
 from pathlib import Path
 from src.utils import bayesian_shrink
@@ -132,7 +131,7 @@ class PublisherAuthorAnalyzer:
 
         self.pub_stats = pub_stats.sort_values("pub_score", ascending=False)
         print(f"  出版社数量: {len(self.pub_stats)}")
-        print(f"  Top 5:")
+        print("  Top 5:")
         for i, (name, row) in enumerate(self.pub_stats.head(5).iterrows()):
             print(f"    {i+1}. {name[:20]:<22s} 书{int(row['book_count']):>4d}本 均分{row['avg_rating']:.2f} 综合{row['pub_score']:.4f}")
 
@@ -173,7 +172,7 @@ class PublisherAuthorAnalyzer:
 
         self.author_stats = author_stats.sort_values("influence", ascending=False)
         print(f"  作者数量: {len(self.author_stats)}")
-        print(f"  Top 5:")
+        print("  Top 5:")
         for i, (name, row) in enumerate(self.author_stats.head(5).iterrows()):
             print(f"    {i+1}. {name[:18]:<20s} [{row['nationality']}] 书{int(row['book_count']):>3d}本 均分{row['avg_rating']:.2f} 影响力{row['influence']:.1f}")
 
@@ -318,7 +317,7 @@ class PublisherAuthorAnalyzer:
         self.author_stats.to_csv(
             DATA_DIR / "processed" / "author_stats.csv",
             encoding="utf-8-sig")
-        print(f"\n[保存] publisher_stats.csv + author_stats.csv")
+        print("\n[保存] publisher_stats.csv + author_stats.csv")
 
         print("\n[Done] 出版社/作者评价分析完成！")
         return self

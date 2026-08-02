@@ -2,6 +2,8 @@
 
 > 基于 174,244 本豆瓣图书数据的智能推荐与评分预测系统 —— 江南大学大学生创新训练计划项目
 
+[![CI](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml)
+
 **在线 Demo**: [xiaowanghold-bot-douban-book-recommender](https://xiaowanghold-bot-douban-book-recommender-appmain-epob3s.streamlit.app)
 
 ![应用截图2](reports/figures/screenshot_demo2.png)
@@ -45,7 +47,7 @@ graph LR
 
     I[Books_detail.csv<br/>6,584 本详情] --> F
     I --> G
-    I --> J[coldstart_predictor.py<br/>GradientBoosting v3]
+    I --> J[coldstart_predictor.py<br/>GradientBoosting v4]
     J --> H
 
     K[IJCAI Dataset<br/>DTCDR/GA-DTCDR] -->|integrate_ijcai.py| L[book_tags.json<br/>35,693 本标签]
@@ -71,7 +73,7 @@ graph LR
 
 > 局限性说明：实验A（同系列）对两种引擎均存在系列偏向——字符版靠书名重叠，语义版靠共享作者名与标签，因此系列 Recall 会高估实际推荐能力，需结合实验E的真实用户指标综合判断。实验E受限于 IJCAI 数据集覆盖范围（1,603 名用户，>=10 条评分且>=5 本高分在推荐索引内），样本量有限。
 
-### 2. 评分预测：LabelEncoder 缺陷发现 -> train-only 均值特征修复
+### 2. 评分预测：LabelEncoder 缺陷发现 -> OOF 目标均值编码
 
 问题发现：原版使用 LabelEncoder 编码 author/publisher（高基数类别的任意整数编码，近乎噪声），导致 RandomForest 输给作者均值基线。
 
@@ -86,18 +88,20 @@ graph LR
 
 > RF 输给作者均值基线
 
-**修复后（train-only 统计均值）**：
+**当前版本 v3（5 折 OOF 目标均值编码）**：
+
+训练记录的作者、出版社和装帧均值只由该记录所在折之外的数据计算；独立测试集统计只来自训练集。生产模型最后使用全量数据的 OOF 特征训练。
 
 | 方法 | RMSE | MAE |
 |------|------|------|
-| 全局均值基线 | 0.7115 | 0.5723 |
-| 出版社均值基线 | 0.6588 | 0.5262 |
-| 作者均值基线 | 0.5987 | 0.4553 |
-| RandomForest (修复后) | 0.5457 | 0.4120 |
+| 全局均值基线 | 0.7238 | 0.5834 |
+| 出版社均值基线 | 0.6640 | 0.5215 |
+| 作者均值基线 | 0.5515 | 0.4041 |
+| RandomForest v3 (OOF) | **0.5013** | **0.3729** |
 
-> 修复后 RMSE 反超作者均值基线 0.599，证明模型学到了超出简单统计量的信息。
+> 独立测试集 R²=0.5202；嵌套 5 折 CV R²=0.4569±0.0258。模型在无目标泄露的条件下优于作者均值基线。
 
-### 3. 冷启动预测：双重泄露自查 -> v3 修正
+### 3. 冷启动预测：双重泄露自查 -> v4 OOF 修正
 
 问题发现：(a) votes_log 特征——真正的新书 votes=0，训练时不该见到此特征；(b) author_avg_rating/pub_avg_rating 等统计特征包含了目标书本身（数据泄露）——统计特征含自身才是泄露主体，去 votes_log 影响甚微。
 
@@ -106,9 +110,10 @@ graph LR
 | 作者均值基线（无模型） | 0.38 | 直接输出作者均分 |
 | v1 原始 11 特征 | 0.81 | 虚高，含泄露 |
 | v2 去 votes_log（10特征） | 0.80 | 去votes_log影响甚微，统计泄露仍在 |
-| **v3 去 votes_log + LOO统计（线上部署版）** | **0.50** | 诚实估计，仍显著优于基线 |
+| v3 去 votes_log + LOO统计 | 0.50 | 旧评估错误地从训练统计中减去测试行评分，已废弃 |
+| **v4 去 votes_log + 5折 OOF（线上部署版）** | **0.4933** | 独立测试特征只使用训练集统计 |
 
-> 线上部署即 v3，侧边栏指标为真实测试集 R-squared=0.50。
+> v4 独立测试 RMSE=0.5040、MAE=0.3853、R²=0.4933；嵌套 5 折 CV R²=0.4222±0.0293。相似书检索改用标准化欧氏距离，避免未缩放年份导致相似度全部趋近 1。
 
 ---
 
@@ -139,7 +144,13 @@ streamlit run app/main.py
 
 # 测试
 pytest tests/ -v
+
+# 开发环境（包含 pytest + ruff）
+pip install -r requirements-dev.txt
+ruff check app src tests crawler
 ```
+
+项目使用 Python 3.12；核心科学计算与 scikit-learn 版本已锁定，以保证仓库内预训练模型可重复加载。Streamlit Community Cloud 部署时请在 Advanced settings 中选择 Python 3.12。
 
 ---
 
@@ -185,7 +196,7 @@ data/models/ 目录下为预计算产物，因 Streamlit Cloud 部署需要而�
 
 - 基于 IJCAI 评分数据的 item-based 协同过滤对比实验
 - 图书简介覆盖扩展（当前 1,840 条，目标 30,000）
-- CI 自动化（pytest + ruff 提交前检查）
+- 扩展 CI：增加模型重训练与数据漂移检查
 - 基于标签的个性化推荐策略
 
 ---

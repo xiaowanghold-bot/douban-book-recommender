@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """批量爬取豆瓣图书简介 - BeautifulSoup版本"""
-import requests, time, random, json, sys, os
+import requests
+import time
+import random
+import json
+import sys
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -111,5 +115,5 @@ with open(PROGRESS_FILE, "w") as pf:
         if bid_str in descs:
             pf.write(bid_str + "\n")
 
-print(f"\n========== 完成 ==========")
+print("\n========== 完成 ==========")
 print(f"新增:{success} | 无简介:{no_intro} | 失败:{fail} | 总:{len(descs)}")

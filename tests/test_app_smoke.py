@@ -1,15 +1,16 @@
 """UI smoke test for douban-book-recommender Streamlit app."""
-import sys, os
+import sys
+import os
 from pathlib import Path
+
+import pytest
+from streamlit.testing.v1 import AppTest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 APP_DIR = PROJECT_ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 os.chdir(str(PROJECT_ROOT))
-
-import pytest
-from streamlit.testing.v1 import AppTest
 
 PAGES = [
     "🏠 首页",
@@ -45,8 +46,10 @@ def test_rating_prediction_v2(app):
     import pickle
     with open("data/models/rating_predictor.pkl", "rb") as f:
         data = pickle.load(f)
-    assert "author_means" in data["encoders"], "v2: missing author_means dict"
-    assert "global_mean" in data["encoders"], "v2: missing global_mean"
+    assert data.get("artifact_version") == 3
+    assert data["metrics"]["encoding"] == "5-fold OOF target means"
+    assert "author_means" in data["encoders"], "v3: missing author_means dict"
+    assert "global_mean" in data["encoders"], "v3: missing global_mean"
     # Verify prediction works on known author
     import numpy as np
     gm = data["encoders"]["global_mean"]
@@ -64,6 +67,15 @@ def test_tag_browse_novel(app):
     app.sidebar.radio[0].set_value(PAGES[7]).run()
     assert not app.exception
 
-def test_search_tag_scifi(app):
+def test_search_and_recommendation_interaction(app):
     app.sidebar.radio[0].set_value(PAGES[2]).run()
     assert not app.exception
+    app.text_input[0].set_value("三体").run(timeout=60)
+    assert not app.exception
+    assert app.button, "搜索结果应包含可选择的图书"
+
+    app.button[0].click().run(timeout=60)
+    assert not app.exception
+    tab_labels = [tab.label for tab in app.tabs]
+    assert "📚 内容推荐" in tab_labels
+    assert "🔀 混合推荐" in tab_labels

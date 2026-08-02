@@ -38,47 +38,40 @@
 
 > ⚠ RF 输给作者均值 baseline
 
-### 修复后 (train-only 统计均值)
+### 当前版本 v3（5 折 OOF 目标均值编码）
 
-- 训练集: 4,992 条, 测试集: 1,248 条
+- 有效数据: 6,357 条；训练集: 5,085 条，独立测试集: 1,272 条
 - 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5, random_state=42)
-- 特征: price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only 统计均值)
+- 特征: price, year, pages, votes_log, author_mean, publisher_mean, binding_mean
+- 训练类别统计: 5 折 OOF 目标均值；验证/测试类别统计仅来自对应训练集
+- 嵌套 5 折 CV R²: 0.4569 ± 0.0258
 
 | 方法 | RMSE | MAE |
 |------|------|-----|
-| 全局均值 | 0.7115 | 0.5723 |
-| 出版社均值 | 0.6588 | 0.5262 |
-| 作者均值 | 0.5987 | 0.4553 |
-| RandomForest (修复后) | 0.5457 | 0.4120 |
+| 全局均值 | 0.7238 | 0.5834 |
+| 出版社均值 | 0.6640 | 0.5215 |
+| 作者均值 | 0.5515 | 0.4041 |
+| RandomForest v3 (OOF target means) | 0.5013 | 0.3729 |
 
-> ✅ RF 反超！RMSE 0.615 → 0.546, MAE 0.489 → 0.41
-## 实验 C: 冷启动模型泄露检查
+> RandomForest 在无目标泄露的条件下优于作者均值基线；独立测试集 R²=0.5202。
+## 实验 C: 冷启动模型 v4 严格评估
 
-### 现状分析
+- 训练目标统计: 5 折 OOF；每行特征不包含自身评分
+- 独立测试特征: 只使用训练集作者、出版社和装帧统计
+- 最终生产模型: 全量 5 折 OOF 特征训练，不使用 votes_log
+- 训练集: 5,260 条，测试集: 1,315 条
+- 嵌套 5 折 CV R²: 0.4222 ± 0.0293
 
-`coldstart_predictor.py` 的 `build_stats()` 在**全量 `self.df`** 上计算 stats，
-然后 `build_features()` 逐行映射。这意味着 `pub_avg_rating` 和 `author_avg_rating`
-都**包含目标书本身的评分** → 标签泄露。
-
-`votes_log` 特征对真实新书不可用（votes≈0），属于特征泄露。
-
-### 对比实验
-
-- 训练集: 5,260 条, 测试集: 1,315 条
-- 模型: GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42) — 与生产冷启动模型同配置
-
-| 版本 | RMSE | R² |
-|------|------|----|
-| Baseline (作者均值) | 0.5580 | 0.3788 |
-| v1: 11特征(含泄露) | 0.3117 | 0.8062 |
-| v2: 10特征(去votes_log) | 0.3132 | 0.8044 |
-| v3: 10特征(去votes+LOO统计) | 0.5023 | 0.4967 |
+| 方法 | RMSE | MAE | R² |
+|------|------|-----|----|
+| 作者均值 baseline | 0.5580 | — | 0.3788 |
+| GradientBoosting v4 | 0.5040 | 0.3853 | 0.4933 |
 
 ### 结论
 
-- v3（严谨版）R²=0.4967，对比作者均值 baseline R²=0.3788
-- 差距 = +0.1179
-- ✅ 模型优于作者均值 baseline。
+- v4 独立测试 R²=0.4933，对比作者均值 baseline R²=0.3788，提升 +0.1145。
+- 旧 v3 评估会从训练统计中错误减去测试行评分，结果 0.4967 已废弃。
+- 相似书检索使用标准化欧氏距离，不再被约 2000 量级的出版年份主导。
 
 ## 实验 E: 真实用户 Leave-One-Out 评估 (IJCAI 数据集)
 

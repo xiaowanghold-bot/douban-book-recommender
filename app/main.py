@@ -6,15 +6,20 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sys, json, pickle, re, base64
+import base64
+import json
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from recommendation import BookRecommender
-from components import render_cover, render_book_detail, cover_to_base64
+from components import render_cover
 from utils import dedup_editions
 from genre_search import build_genre_search_index, search_books_by_genre, GENRE_GROUPS
 from coldstart_page import show as show_coldstart
+from rating_page import show as show_rating
+from search_page import show as show_search
+from rating_predictor import RatingPredictorArtifact
 
 st.set_page_config(
     page_title="豆瓣图书评价与推荐系统",
@@ -76,44 +81,25 @@ def load_author_stats():
 @st.cache_resource
 def load_predictor():
     p = BASE_DIR / "data" / "models" / "rating_predictor.pkl"
-    if not p.exists():
-        return None
-    with open(p, "rb") as f:
-        data = pickle.load(f)
-    # Wrap dict into a callable object (v2: train-only means, no LabelEncoder)
-    class PredictorWrapper:
-        def __init__(self, data):
-            self.model = data["model"]
-            self.encoders = data["encoders"]
-            self.feature_names = data["feature_names"]
-            self.metrics = data["metrics"]
-        
-        def predict(self, price, year, pages, votes, author="未知", publisher="未知", binding="平装"):
-            """v2: train-only means (author_mean/publisher_mean/binding_mean). fallback to global_mean."""
-            import re, numpy as np
-            features = {}
-            features["price"] = float(price)
-            features["year"] = float(year)
-            features["pages"] = float(pages)
-            features["votes_log"] = np.log1p(float(votes))
-            
-            author_clean = re.sub(r"[.*?]|(.*?)|（.*?）", "", str(author)).strip()[:30]
-            publisher_clean = str(publisher).strip()[:20]
-            binding_type = "平装" if "平装" in str(binding) else ("精装" if "精装" in str(binding) else "其他")
-            
-            gm = self.encoders.get("global_mean", 8.0)
-            author_mean = self.encoders.get("author_means", {}).get(author_clean, gm)
-            publisher_mean = self.encoders.get("publisher_means", {}).get(publisher_clean, gm)
-            binding_mean = self.encoders.get("binding_means", {}).get(binding_type, gm)
-            
-            features["author_mean"] = float(author_mean)
-            features["publisher_mean"] = float(publisher_mean)
-            features["binding_mean"] = float(binding_mean)
-            
-            X = np.array([[features[n] for n in self.feature_names]])
-            return float(self.model.predict(X)[0])
-    
-    return PredictorWrapper(data)
+    return RatingPredictorArtifact.load(p)
+
+
+@st.cache_data
+def load_rating_model_meta():
+    path = BASE_DIR / "data" / "models" / "rating_model_meta.json"
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+@st.cache_data
+def load_coldstart_model_meta():
+    path = BASE_DIR / "data" / "models" / "coldstart_model_meta.json"
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
 
 @st.cache_resource
 def load_coldstart_predictor():
@@ -142,7 +128,8 @@ def load_cover_map():
 @st.cache_resource
 def load_tag_index():
     """Build tag->book_ids inverted index from real Douban user tags."""
-    import json, pandas as pd
+    import json
+    import pandas as pd
     tag_file = DATA_DIR / "processed" / "book_tags.json"
     tc_file = DATA_DIR / "processed" / "tag_counts.csv"
     tag_to_ids = {}
@@ -174,6 +161,10 @@ descriptions = load_descriptions()
 cover_map = load_cover_map()
 pub_stats = load_pub_stats()
 auth_stats = load_author_stats()
+rating_model_meta = load_rating_model_meta()
+rating_metrics = rating_model_meta.get("metrics", {})
+coldstart_model_meta = load_coldstart_model_meta()
+coldstart_metrics = coldstart_model_meta.get("metrics", {})
 
 # ========== 工具函数 ==========
 def get_detail_info(book_id):
@@ -283,7 +274,12 @@ with st.sidebar:
     st.sidebar.caption("图书简介: {0:,} 本".format(len(descriptions)))
     st.sidebar.caption("封面图片: {0:,} 张".format(len(cover_map)))
     st.sidebar.caption("推荐引擎: jieba 语义 TF-IDF + Cosine")
-    st.sidebar.caption("评分预测: RF RMSE=0.55 | 冷启动: GBR R²=0.50")
+    st.sidebar.caption(
+        "评分预测: RF RMSE={0:.2f} | 冷启动: GBR R²={1:.2f}".format(
+            rating_metrics.get("RMSE", 0.50),
+            coldstart_metrics.get("R2", 0.49),
+        )
+    )
     st.sidebar.caption("江南大学 · 大创项目")
     st.sidebar.success("📁 xiaowanghold-bot/douban-book-recommender")
 # ======================================================================
@@ -291,7 +287,6 @@ with st.sidebar:
 # ======================================================================
 if page == "🏠 首页":
     import plotly.express as px
-    import os
 
     dark_bg = "#1a1a2e" if st.session_state.dark_mode else "#ffffff"
     card_bg = "#2d2d44" if st.session_state.dark_mode else "#ffffff"
@@ -405,7 +400,6 @@ if page == "🏠 首页":
     _orig_covers = VERIFIED_COVERS
     _pool = df_with_covers.nlargest(200, "bayesian_score")
     _pool = _pool.drop_duplicates(subset="title", keep="first")
-    import os as _os_qf
     def _cover_ok(bid):
         p = COVER_DIR / "{}.jpg".format(int(bid))
         return p.exists() and p.stat().st_size > 12000
@@ -517,7 +511,7 @@ if page == "🏠 首页":
         (fc1, "🏆", "贝叶斯排行榜", "科学评分排名", "#667eea", "#764ba2", "🏆 排行榜", "前往排行榜", "nav_r"),
         (fc2, "🔍", "智能搜书推荐", "内容相似度匹配", "#f093fb", "#f5576c", "🔍 搜书推荐", "前往搜书", "nav_s"),
         (fc3, "🏢", "出版社与作者", f"{len(pub_stats) if pub_stats is not None else "?"}社+{len(auth_stats) if auth_stats is not None else "?"}位作者", "#4facfe", "#00f2fe", "🏢 出版社与作者", "前往分析", "nav_p"),
-        (fc4, "🔮", "评分预测", "R²=0.50", "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
+        (fc4, "🔮", "评分预测", "R²={0:.2f}".format(rating_metrics.get("R2", 0.52)), "#43e97b", "#38f9d7", "🔮 评分预测", "前往预测", "nav_d"),
     ]
     for col, icon, title, desc, c1, c2, target, btn_text, btn_key in nav_data:
         with col:
@@ -556,7 +550,6 @@ elif page == "🏆 排行榜":
 
     with tab1:
         import plotly.express as px
-        import plotly.graph_objects as go
         import numpy as np
 
         top_disp = top.head(20).copy()
@@ -645,104 +638,14 @@ elif page == "🏆 排行榜":
         csv = disp.to_csv(encoding="utf-8-sig").encode("utf-8-sig")
         st.download_button("📥 下载排行榜 CSV", csv, "book_ranking.csv", "text/csv")
 elif page == "🔍 搜书推荐":
-    st.title("🔍 搜书 & 智能推荐")
-
-    # Tag filter + search
-    sc1, sc2 = st.columns([1, 3])
-    with sc1:
-        quick_tags = ["全部", "小说", "文学", "历史", "哲学", "科幻", "推理", "爱情",
-                      "武侠", "心理", "经济", "漫画", "诗歌", "传记", "散文", "悬疑"]
-        tag_sel = st.selectbox("🏷️ 标签筛选", quick_tags, key="search_tag")
-    with sc2:
-        hint = "输入书名关键词..." if tag_sel == "全部" else "筛选「{0}」类图书，也可输入关键词".format(tag_sel)
-        st.caption("💡 {0}".format(hint))
-
-    search_term = st.text_input("🔍 输入书名或关键词",
-                                placeholder="例如：三体、活着、百年孤独...",
-                                key="search_box")
-    if tag_sel != "全部" and not search_term:
-        search_term = tag_sel
-
-    if search_term:
-        with st.spinner("搜索中..."):
-            results = rec.recommend_by_title(search_term, top_n=20)
-
-        if results.empty:
-            st.warning("未找到相关图书，请尝试其他关键词")
-        else:
-            st.caption("🔍 找到 {0} 本匹配图书：".format(len(results)))
-            match_cols = st.columns(4)
-            for i, (_, m) in enumerate(results.iterrows()):
-                ci = i % 4
-                with match_cols[ci]:
-                    render_cover(m["id"], cover_map, COVER_DIR, VERIFIED_COVERS, width=110)
-                    btn_label = "{0} ⭐{1:.1f}".format(str(m["title"])[:22], m["rating"])
-                    if st.button(btn_label, key="suggest_{0}".format(m["id"]), use_container_width=True,
-                                 help="{0:,}人评价".format(int(m["votes"]))):
-                        st.session_state.selected_book_id = int(m["id"])
-                        st.session_state.selected_book_title = m["title"]
-                        st.session_state.selected_book_rating = m["rating"]
-                        st.session_state.selected_book_votes = m["votes"]
-                        st.rerun()
-
-            # Show selected book detail + recommendations
-            if "selected_book_id" in st.session_state and st.session_state.selected_book_id:
-                bid = st.session_state.selected_book_id
-                st.markdown("---")
-                st.markdown("### 📖 {0}".format(st.session_state.get("selected_book_title", "")))
-
-                # Detail info
-                info = get_detail_info(bid)
-                desc = get_desc(bid)
-                dc1, dc2 = st.columns([1, 3])
-                with dc1:
-                    render_cover(bid, cover_map, COVER_DIR, VERIFIED_COVERS, width=200)
-                with dc2:
-                    st.markdown("⭐ {0:.1f} | 👥 {1:,}人评价".format(
-                        st.session_state.get("selected_book_rating", 0),
-                        int(st.session_state.get("selected_book_votes", 0))))
-                    for k in ["author", "publisher", "pub_year", "price", "pages", "binding", "isbn"]:
-                        v = info.get(k, "")
-                        if v and v != "nan":
-                            st.caption("{0}: {1}".format(k, v))
-                if desc:
-                    st.markdown("**📝 简介**: {0}".format(desc[:400]))
-                if st.button("❌ 关闭详情", key="close_search_detail"):
-                    st.session_state.selected_book_id = None
-                    st.rerun()
-
-                st.markdown("---")
-                # Recommendations
-                t1, t2 = st.tabs(["📚 内容推荐", "🔀 混合推荐"])
-                with t1:
-                    recs = rec.recommend_by_id(bid, top_n=10)
-                    for j, (_, r) in enumerate(recs.iterrows()):
-                        st.markdown("**{0}. {1}** ⭐{2:.1f} 📊{3:,}人 `{4:.2%}`".format(
-                            j+1, r["title"], r["rating"], int(r["votes"]), r["similarity"]))
-                        st.progress(float(r["similarity"]))
-                with t2:
-                    hyb = rec.hybrid_recommend(bid, top_n=10)
-                    for j, (_, r) in enumerate(hyb.iterrows()):
-                        st.markdown("**{0}. {1}** ⭐{2:.1f} 📊{3:,}人 `{4:.4f}`".format(
-                            j+1, r["title"], r["rating"], int(r["votes"]), r["hybrid_score"]))
-                        st.progress(float(r["hybrid_score"]))
-
-                # Export
-                st.markdown("---")
-                st.caption("📥 导出推荐结果")
-                ec1, ec2 = st.columns(2)
-                with ec1:
-                    try:
-                        recs_csv = recs.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        st.download_button("📥 内容推荐 CSV", recs_csv, "content_recs.csv", "text/csv", key="dl_c", use_container_width=True)
-                    except:
-                        pass
-                with ec2:
-                    try:
-                        hyb_csv = hyb.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        st.download_button("📥 混合推荐 CSV", hyb_csv, "hybrid_recs.csv", "text/csv", key="dl_h", use_container_width=True)
-                    except:
-                        pass
+    show_search(
+        rec,
+        cover_map,
+        COVER_DIR,
+        VERIFIED_COVERS,
+        get_detail_info,
+        get_desc,
+    )
 
 # ======================================================================
 #  出版社与作者
@@ -796,95 +699,7 @@ elif page == "🏢 出版社与作者":
 #  评分预测 (REFORMED: prediction-first layout)
 # ======================================================================
 elif page == "🔮 评分预测":
-    st.title("🔮 图书评分预测")
-    st.markdown("*输入图书信息，AI 模型预测豆瓣评分*")
-
-    predictor = load_predictor()
-
-    TOP_PUBLISHERS = [
-        "上海文艺出版社", "人民文学出版社", "上海出版公司", "新星出版社",
-        "吉林出版社", "北京师范大学出版社", "江苏文艺出版社", "中信出版社",
-        "生活·读书·新知三联书店", "广西师范大学出版社", "作家出版社",
-        "上海译文出版社", "中华书局", "译林出版社", "南海出版公司",
-        "北京大学出版社", "商务印书馆", "重庆大学出版社", "上海人民出版社", "浙江文艺出版社"
-    ]
-    TOP_AUTHORS = [
-        "东野圭吾", "村上春树", "金庸", "三毛", "王小波", "鲁迅",
-        "阿加莎·克里斯蒂", "莫言", "张爱玲", "余华", "钱钟书",
-        "严歌苓", "韩寒", "刘慈欣", "太宰治", "桐华", "杨绛",
-        "马尔克斯", "乔治·奥威尔"
-    ]
-
-    # Main layout: input form + prediction result side by side
-    rc1, rc2 = st.columns(2)
-
-    with rc1:
-        st.markdown("### 📝 输入图书信息")
-
-        pub_options = TOP_PUBLISHERS + ["✏️ 其他（手动输入）"]
-        pub_choice = st.selectbox("出版社（热门推荐）", pub_options, index=1, key="pred_pub")
-        if pub_choice == "✏️ 其他（手动输入）":
-            publisher = st.text_input("请输入出版社名称", placeholder="例如：机械工业出版社", key="pred_pub_custom")
-        else:
-            publisher = pub_choice
-            st.caption("已选：{0}".format(publisher))
-
-        author_options = TOP_AUTHORS + ["✏️ 其他（手动输入）"]
-        author_choice = st.selectbox("作者（热门推荐）", author_options, index=9, key="pred_author")
-        if author_choice == "✏️ 其他（手动输入）":
-            author = st.text_input("请输入作者名称", placeholder="例如：陈忠实", key="pred_author_custom")
-        else:
-            author = author_choice
-            st.caption("已选：{0}".format(author))
-
-        price = st.number_input("定价（元）", min_value=0.0, max_value=999.0, value=39.5, step=0.5, key="pred_price")
-        year = st.number_input("出版年份", min_value=1900, max_value=2026, value=2014, step=1, key="pred_year")
-        pages = st.number_input("页数", min_value=10, max_value=5000, value=300, step=10, key="pred_pages")
-        votes = st.number_input("评价人数（预估）", min_value=0, max_value=5000000, value=50000, step=1000, key="pred_votes")
-
-        binding_choice = st.selectbox("装帧", ["平装", "精装", "其他"], key="pred_binding")
-
-        predict_btn = st.button("🚀 开始预测", type="primary", use_container_width=True, key="pred_btn")
-
-    with rc2:
-        st.markdown("### 🎯 预测结果")
-        if predict_btn:
-            if predictor is not None:
-                with st.spinner("模型预测中..."):
-                    pred_score = predictor.predict(
-                        price=price, year=year, pages=pages, votes=votes,
-                        author=author, publisher=publisher, binding=binding_choice
-                    )
-                if pred_score is not None:
-                    st.markdown("""
-                    <div style="text-align:center;padding:30px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:16px;color:white;">
-                        <div style="font-size:1.2em;margin-bottom:10px;">预测豆瓣评分</div>
-                        <div style="font-size:4em;font-weight:900;">{0:.1f}</div>
-                        <div style="font-size:1em;opacity:0.8;">满分 10.0</div>
-                    </div>
-                    """.format(pred_score), unsafe_allow_html=True)
-
-                    st.markdown("---")
-                    st.markdown("**📋 预测详情**")
-                    st.markdown("- 作者: {0}".format(author))
-                    st.markdown("- 出版社: {0}".format(publisher))
-                    st.markdown("- 定价: {0}元 | 年份: {1} | 页数: {2}".format(price, year, pages))
-                    st.markdown("- 装帧: {0} | 评价人数: {1:,}".format(binding_choice, int(votes)))
-                else:
-                    st.error("模型预测失败，请检查输入")
-            else:
-                st.warning("评分预测模型未加载，请先运行 src/enhancements.py 训练模型")
-
-    # Model info at bottom (less prominent)
-    st.markdown("---")
-    with st.expander("🧠 模型信息（点击展开）", expanded=False):
-        st.markdown("""
-        **RandomForest 回归模型**
-        - 独立测试集 RMSE: **0.546** (vs 作者均值基线 0.599)
-        - 独立测试集 MAE: **0.412** (vs 作者均值基线 0.455)
-        - 特征: price, year, pages, votes_log, author_mean, publisher_mean, binding_mean (train-only 统计均值)
-        - 模型: RandomForestRegressor(n_estimators=100, max_depth=12, min_samples_leaf=5)
-        """)
+    show_rating(load_predictor(), rating_metrics)
 
 # ======================================================================
 #  更多发现
@@ -1020,7 +835,7 @@ elif page == "📋 关于项目":
 - **贝叶斯加权评分**：IMDb 式算法消除评价人数偏差
 - **内容推荐引擎**：jieba 语义 TF-IDF + 余弦相似度，融合书名/标签/作者/简介，去重同书名
 - **出版社/作者分析**：{len(pub_stats) if pub_stats is not None else "?"} 家出版社、{len(auth_stats) if auth_stats is not None else "?"} 位作者综合评价矩阵
-- **评分预测**：RandomForest 回归 (RMSE 0.546, 优于作者均值基线 0.599)；冷启动：GradientBoosting v3 (10维LOO特征, 测试R²=0.50)
+- **评分预测**：RandomForest 回归 (RMSE {rating_metrics.get("RMSE", 0):.3f}, OOF目标编码)；冷启动：GradientBoosting v4 (10维OOF特征, 测试R²={coldstart_metrics.get("R2", 0):.3f})
 
 ### 数据来源
 - 豆瓣读书公开数据集 (yuzhounh/Douban-books-2020)

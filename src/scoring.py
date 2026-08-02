@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
-import sys, io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import sys
+import io
 from pathlib import Path
 
-fm.fontManager.addfont("C:/Windows/Fonts/simhei.ttf")
-plt.rcParams["font.family"] = "SimHei"
-plt.rcParams["axes.unicode_minus"] = False
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from src.utils import setup_chinese_font
+
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer, encoding="utf-8", errors="replace"
+    )
+plt.switch_backend("Agg")
+setup_chinese_font()
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 FIG_DIR = Path(__file__).parent.parent / "reports" / "figures"
@@ -36,7 +38,7 @@ if __name__ == "__main__":
     m_values = [1, 3, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1000]
     original_top10 = set(df.nlargest(10, "score_popularity")["id"])
     
-    print(f"\n=== m参数实证扫描 ===")
+    print("\n=== m参数实证扫描 ===")
     print(f"  {'m':>5}  {'Top1':<22} {'Top10重叠':>8} {'低评价入Top100':>10}")
     print(f"  {'-'*50}")
     
@@ -52,7 +54,7 @@ if __name__ == "__main__":
         scan[m] = {"overlap": overlap, "low_vote": low_vote}
     
     # === m参数优化 ===
-    print(f"\n=== m参数优化（评价人数中位数法）===")
+    print("\n=== m参数优化（评价人数中位数法）===")
     high_rated = df[df["rating"] >= 8]
     m_median = int(high_rated["votes"].median())
     p25 = int(high_rated["votes"].quantile(0.25))
@@ -73,7 +75,8 @@ if __name__ == "__main__":
     axes[0].set_xlabel("m 参数值")
     axes[0].set_ylabel("Top10 重叠数")
     axes[0].set_title("m 参数 vs Top10 排名稳定性")
-    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
     
     axes[1].plot(m_sorted, [scan[m]["low_vote"] for m in m_sorted],
                  "s-", color="#55A868", linewidth=2, markersize=6)
@@ -81,7 +84,8 @@ if __name__ == "__main__":
     axes[1].set_xlabel("m 参数值")
     axes[1].set_ylabel("Top100 中低评价图书数\n(Votes < 100)")
     axes[1].set_title("m 参数 vs 小众图书过滤效果")
-    axes[1].legend(); axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
     plt.tight_layout()
     fig.savefig(FIG_DIR / "08_m_parameter_analysis.png", dpi=150, bbox_inches="tight")
     plt.close()
@@ -121,7 +125,7 @@ if __name__ == "__main__":
             "log_votes","score_popularity","votes_tier","rating_tier"]
     df[cols].to_csv(DATA_DIR / "processed" / "books_scored.csv",
                     index=False, encoding="utf-8-sig")
-    print(f"[保存] books_scored.csv")
+    print("[保存] books_scored.csv")
     
     # === Top 20 ===
     top20 = df.nlargest(20, "bayesian_score")
@@ -132,7 +136,7 @@ if __name__ == "__main__":
     
     # 统计信息
     top100 = df.nlargest(100, "bayesian_score")
-    print(f"\n=== 排名统计 ===")
+    print("\n=== 排名统计 ===")
     print(f"  Top100 平均评分: {top100['rating'].mean():.2f}")
     print(f"  Top100 平均评价人数: {top100['votes'].mean():.0f}")
     print(f"  Top100 中评价<100: {(top100['votes']<100).sum()} 本")

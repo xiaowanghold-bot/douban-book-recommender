@@ -9,11 +9,18 @@ Features:
 """
 import pandas as pd
 import numpy as np
-import re
+import json
 import pickle
 import warnings
 from pathlib import Path
-from collections import Counter
+
+from src.coldstart_training import (
+    build_coldstart_feature_frame,
+    build_coldstart_stats,
+    build_oof_coldstart_feature_frame,
+    prepare_coldstart_dataframe,
+    train_coldstart_models,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -35,222 +42,73 @@ class ColdStartPredictor:
         self.book_ids = None
         self.titles = None
         self.metrics = {}
+        self.artifact_version = None
         self._stats_cache = {}  # publisher/author avg ratings
 
     def load_data(self):
         """加载并清洗数据"""
         print("[ColdStart] Loading data...")
-        df = pd.read_csv(DATA_DIR / "raw" / "Books_detail.csv", encoding="utf-8-sig")
-        df = df[df["crawl_status"] == "success"].copy()
-        df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-        df["Votes"] = pd.to_numeric(df["Votes"], errors="coerce")
-        df["pages"] = pd.to_numeric(df["pages"], errors="coerce")
-        df["pub_year"] = pd.to_numeric(df["pub_year"], errors="coerce")
-
-        df = df.dropna(subset=["Rating", "Votes"])
-        df = df[(df["Rating"] >= 1) & (df["Rating"] <= 10)]
-        df = df[df["Votes"] >= 10]
-
-        df["author"] = df["author"].fillna("未知").astype(str)
-        df["publisher"] = df["publisher"].fillna("未知").astype(str)
-        df["binding"] = df["binding"].fillna("其他").astype(str)
-        df["pages"] = df["pages"].fillna(300).astype(int)
-        df["pub_year"] = df["pub_year"].fillna(2010).astype(int)
-
-        # Derived features
-        df["is_translation"] = (df["translator"].notna() | df["original_title"].notna()).astype(int)
-        df["is_series"] = df["series"].notna().astype(int)
-
-        self.df = df
-        print(f"  Loaded {len(df):,} books for training")
+        detail = pd.read_csv(
+            DATA_DIR / "raw" / "Books_detail.csv", encoding="utf-8-sig"
+        )
+        self.df = prepare_coldstart_dataframe(detail)
+        print(f"  Loaded {len(self.df):,} books for training")
         return self
 
     def build_stats(self):
-        """v3: 对全量数据构建统计量（用于预测时的查询），训练时内部用 LOO 避免泄露"""
-        print("[ColdStart] Building statistical features (v3: train-only, no votes_log)...")
-        df = self.df
-
-        # Publisher stats
-        pub_stats = df.groupby("publisher").agg(
-            pub_avg_rating=("Rating", "mean"),
-            pub_book_count=("Rating", "count"),
-            pub_std_rating=("Rating", "std"),
-        ).fillna(0)
-        self._stats_cache["publisher"] = pub_stats
+        """构建预测时使用的全量参考统计。"""
+        print("[ColdStart] Building runtime reference statistics...")
+        self._stats_cache = build_coldstart_stats(self.df)
+        pub_stats = self._stats_cache["publisher"]
+        auth_stats = self._stats_cache["author"]
         print(f"  Publishers: {len(pub_stats)}")
-
-        # Author stats
-        auth_stats = df.groupby("author").agg(
-            author_avg_rating=("Rating", "mean"),
-            author_book_count=("Rating", "count"),
-        ).fillna(0)
-        self._stats_cache["author"] = auth_stats
         print(f"  Authors: {len(auth_stats)}")
-
-        # Binding stats
-        binding_stats = df.groupby("binding")["Rating"].mean().to_dict()
-        self._stats_cache["binding"] = binding_stats
-        print(f"  Binding types: {len(binding_stats)}")
-
-        # Year stats (binned)
-        df["year_bin"] = pd.cut(df["pub_year"], bins=range(1900, 2031, 10), labels=False)
-        year_stats = df.groupby("year_bin")["Rating"].mean().to_dict()
-        self._stats_cache["year_bin"] = year_stats
-
-        # Global stats
-        self._stats_cache["global_mean"] = float(df["Rating"].mean())
-        self._stats_cache["global_std"] = float(df["Rating"].std())
+        print(f"  Binding types: {len(self._stats_cache['binding'])}")
         print(f"  Global mean rating: {self._stats_cache['global_mean']:.2f}")
-
         return self
 
     def build_features(self):
-        """v3: 构建 10 维特征矩阵（去 votes_log，LOO 统计）"""
-        print("[ColdStart] Building feature matrix (v3, 10 features, LOO stats)...")
-        from sklearn.model_selection import train_test_split
-        df = self.df.copy()
-
-        # Split: 80% for computing LOO stats
-        train_idx_arr, _ = train_test_split(np.arange(len(df)), test_size=0.2, random_state=42)
-        train_idx = set(train_idx_arr.tolist())
-
-        # Train-only aggregate stats
-        train_subset = df.iloc[list(train_idx)]
-        pub_train = train_subset.groupby("publisher").agg(
-            avg=("Rating", "mean"), cnt=("Rating", "count"), std=("Rating", "std")
-        ).fillna(0)
-        auth_train = train_subset.groupby("author").agg(
-            avg=("Rating", "mean"), cnt=("Rating", "count")
-        ).fillna(0)
-        bind_train = train_subset.groupby("binding")["Rating"].mean().to_dict()
-        gm = float(df["Rating"].mean())
-        gs = float(df["Rating"].std())
-
-        N = len(df)
-        pub_avg = np.zeros(N)
-        pub_cnt = np.zeros(N)
-        pub_std = np.zeros(N)
-        auth_avg = np.zeros(N)
-        auth_cnt = np.zeros(N)
-
-        pub_map = df["publisher"].values
-        auth_map = df["author"].values
-        ratings = df["Rating"].values
-
-        for i in range(N):
-            p = pub_map[i]
-            a = auth_map[i]
-            r = ratings[i]
-
-            if p in pub_train.index:
-                pn = pub_train.loc[p, "cnt"]
-                pm = pub_train.loc[p, "avg"]
-                ps_val = pub_train.loc[p, "std"]
-                if i in train_idx and pn > 1:
-                    pub_avg[i] = (pm * pn - r) / (pn - 1)
-                    pub_cnt[i] = pn - 1
-                else:
-                    pub_avg[i] = pm
-                    pub_cnt[i] = pn
-                pub_std[i] = ps_val if not np.isnan(ps_val) else gs
-            else:
-                pub_avg[i] = gm; pub_cnt[i] = 1; pub_std[i] = gs
-
-            if a in auth_train.index:
-                an = auth_train.loc[a, "cnt"]
-                am = auth_train.loc[a, "avg"]
-                if i in train_idx and an > 1:
-                    auth_avg[i] = (am * an - r) / (an - 1)
-                    auth_cnt[i] = an - 1
-                else:
-                    auth_avg[i] = am
-                    auth_cnt[i] = an
-            else:
-                auth_avg[i] = gm; auth_cnt[i] = 1
-
-        features = {}
-        features["pub_avg_rating"] = pub_avg
-        features["pub_book_count_log"] = np.log1p(np.maximum(pub_cnt, 1))
-        features["pub_std_rating"] = pub_std
-        features["author_avg_rating"] = auth_avg
-        features["author_book_count_log"] = np.log1p(np.maximum(auth_cnt, 1))
-        features["binding_score"] = np.array([bind_train.get(b, gm) for b in df["binding"].values])
-        features["pub_year"] = df["pub_year"].clip(1900, 2030).values.astype(float)
-        features["pages_log"] = np.log1p(df["pages"].clip(10, 5000).values)
-        features["is_translation"] = df["is_translation"].values.astype(float)
-        features["is_series"] = df["is_series"].values.astype(float)
-
-        self.feature_names = [
-            "pub_avg_rating", "pub_book_count_log", "pub_std_rating",
-            "author_avg_rating", "author_book_count_log",
-            "binding_score", "pub_year", "pages_log",
-            "is_translation", "is_series"
-        ]
-
-        X_list = [features[name] for name in self.feature_names]
-        X = np.column_stack(X_list)
-        self.feature_matrix = X
-        self.book_ids = df["ID"].values
-        self.titles = df["Title"].values
-
-        # Store book meta
-        self._book_meta = {}
-        for _, row in df.iterrows():
-            self._book_meta[int(row["ID"])] = {
-                "title": str(row["Title"]), "rating": float(row["Rating"]),
-                "author": str(row["author"]), "publisher": str(row["publisher"]),
-            }
-
-        print(f"  Feature matrix: {X.shape} (10 features, LOO stats)")
+        """构建全量 5 折 OOF 特征矩阵。"""
+        print("[ColdStart] Building 5-fold OOF feature matrix...")
+        features = build_oof_coldstart_feature_frame(self.df)
+        self.feature_names = list(features.columns)
+        self.feature_matrix = features.values
+        self.book_ids = self.df["ID"].values
+        self.titles = self.df["Title"].values
+        print(f"  Feature matrix: {self.feature_matrix.shape}")
         return self
 
     def train(self):
-        """训练 GradientBoostingRegressor + 分位数回归"""
-        from sklearn.ensemble import GradientBoostingRegressor
-        from sklearn.model_selection import cross_val_score
-
-        print("[ColdStart] Training models...")
-        y = self.df["Rating"].values
-        X = self.feature_matrix
-
-        # Main model
-        self.model = GradientBoostingRegressor(
-            n_estimators=200,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            random_state=42,
-        )
-        self.model.fit(X, y)
-
-        # Prediction interval models (quantile regression)
-        self.model_lower = GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05,
-            subsample=0.8, random_state=42, loss="quantile", alpha=0.05,
-        )
-        self.model_lower.fit(X, y)
-
-        self.model_upper = GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05,
-            subsample=0.8, random_state=42, loss="quantile", alpha=0.95,
-        )
-        self.model_upper.fit(X, y)
-
-        # Metrics
-        from sklearn.metrics import mean_absolute_error, r2_score
-        y_pred = self.model.predict(X)
-        cv_scores = cross_val_score(self.model, X, y, cv=5, scoring="r2")
-        self.metrics = {
-            "MAE": mean_absolute_error(y, y_pred),
-            "R2": r2_score(y, y_pred),
-            "CV_R2": float(np.mean(cv_scores)),
-            "CV_R2_std": float(np.std(cv_scores)),
-            "n_samples": len(y),
-            "n_samples": len(y),
+        """评估后在全量 OOF 特征上训练生产模型。"""
+        print("[ColdStart] Evaluating and training v4 models...")
+        result = train_coldstart_models(self.df)
+        self.model = result["model"]
+        self.model_lower = result["model_lower"]
+        self.model_upper = result["model_upper"]
+        self.feature_names = result["feature_names"]
+        self.feature_matrix = result["feature_matrix"]
+        self.similarity_matrix = result["similarity_matrix"]
+        self.similarity_scaler = result["similarity_scaler"]
+        self._stats_cache = result["stats_cache"]
+        self.metrics = result["metrics"]
+        self.book_ids = self.df["ID"].values
+        self.titles = self.df["Title"].values
+        self._book_meta = {
+            int(row.ID): {
+                "title": str(row.Title),
+                "rating": float(row.Rating),
+                "author": str(row.author),
+                "publisher": str(row.publisher),
+            }
+            for _, row in self.df.iterrows()
         }
-        print(f"  MAE: {self.metrics['MAE']:.3f}")
-        print(f"  R2:  {self.metrics['R2']:.3f}")
-        print(f"  CV5: {self.metrics['CV_R2']:.3f}")
+        print(f"  RMSE (test): {self.metrics['RMSE']:.3f}")
+        print(f"  MAE  (test): {self.metrics['MAE']:.3f}")
+        print(f"  R2   (test): {self.metrics['R2']:.3f}")
+        print(
+            f"  CV5  (nested): {self.metrics['CV_R2']:.3f} "
+            f"± {self.metrics['CV_R2_std']:.3f}"
+        )
 
         # Feature importance
         importances = self.model.feature_importances_
@@ -260,7 +118,7 @@ class ColdStartPredictor:
         return self
 
     def save(self):
-        """???? (joblib for sklearn models, pickle for metadata)"""
+        """Save sklearn models and their runtime metadata."""
         import joblib
         # sklearn models via joblib (better cross-version compatibility)
         joblib.dump(self.model, MODEL_DIR / "coldstart_model.joblib")
@@ -270,8 +128,11 @@ class ColdStartPredictor:
         meta_path = MODEL_DIR / "coldstart_meta.pkl"
         with open(meta_path, "wb") as f:
             pickle.dump({
+                "artifact_version": 4,
                 "feature_names": self.feature_names,
                 "feature_matrix": self.feature_matrix,
+                "similarity_matrix": self.similarity_matrix,
+                "similarity_scaler": self.similarity_scaler,
                 "book_ids": self.book_ids,
                 "titles": self.titles,
                 "metrics": self.metrics,
@@ -286,12 +147,28 @@ class ColdStartPredictor:
                     for _, row in self.df.iterrows()
                 } if self.df is not None else {},
             }, f)
+        with open(
+            MODEL_DIR / "coldstart_model_meta.json", "w", encoding="utf-8"
+        ) as f:
+            json.dump(
+                {
+                    "artifact_version": 4,
+                    "model": "GradientBoostingRegressor",
+                    "encoding": "5-fold OOF aggregate features",
+                    "similarity": "standardized Euclidean distance",
+                    "feature_names": self.feature_names,
+                    "metrics": self.metrics,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
         print(f"  [Saved] {MODEL_DIR}")
         return self
 
     @staticmethod
     def load(path=None):
-        """???? (joblib for sklearn, pickle for metadata)"""
+        """Load sklearn models and runtime metadata."""
         import joblib
         if path is None:
             path = MODEL_DIR / "coldstart_meta.pkl"
@@ -300,11 +177,25 @@ class ColdStartPredictor:
         with open(path, "rb") as f:
             data = pickle.load(f)
         predictor = ColdStartPredictor()
+        predictor.artifact_version = data.get("artifact_version", 3)
         predictor.model = joblib.load(MODEL_DIR / "coldstart_model.joblib")
         predictor.model_lower = joblib.load(MODEL_DIR / "coldstart_model_lower.joblib")
         predictor.model_upper = joblib.load(MODEL_DIR / "coldstart_model_upper.joblib")
         predictor.feature_names = data["feature_names"]
         predictor.feature_matrix = data["feature_matrix"]
+        predictor.similarity_matrix = data.get(
+            "similarity_matrix", predictor.feature_matrix
+        )
+        predictor.similarity_scaler = data.get("similarity_scaler")
+        if predictor.similarity_scaler is None:
+            from sklearn.preprocessing import StandardScaler
+
+            predictor.similarity_scaler = StandardScaler().fit(
+                predictor.feature_matrix
+            )
+            predictor.similarity_matrix = predictor.similarity_scaler.transform(
+                predictor.feature_matrix
+            )
         predictor.book_ids = data["book_ids"]
         predictor.titles = data["titles"]
         predictor.metrics = data["metrics"]
@@ -313,52 +204,35 @@ class ColdStartPredictor:
         return predictor
 
     def predict(self, author, publisher, pub_year, pages, binding, is_translation, is_series, votes_estimate=None):
-        """v3: 预测单本书评分（10 维特征，无 votes_log）
+        """v4: 预测单本书评分（10 维特征，无 votes_log）
         返回 (prediction, lower_bound, upper_bound, feature_vector, similar_books)
         votes_estimate 参数保留兼容但不再使用"""
-        from sklearn.metrics.pairwise import cosine_similarity
+        from sklearn.metrics.pairwise import euclidean_distances
 
-        pub_stats = self._stats_cache["publisher"]
-        auth_stats = self._stats_cache["author"]
-        binding_stats = self._stats_cache["binding"]
-        global_mean = self._stats_cache["global_mean"]
-        global_std = self._stats_cache["global_std"]
-
-        # Build feature vector (10 features, no votes_log)
-        features = {}
-
-        if publisher in pub_stats.index:
-            features["pub_avg_rating"] = pub_stats.loc[publisher, "pub_avg_rating"]
-            features["pub_book_count_log"] = np.log1p(pub_stats.loc[publisher, "pub_book_count"])
-            features["pub_std_rating"] = pub_stats.loc[publisher, "pub_std_rating"]
-        else:
-            features["pub_avg_rating"] = global_mean
-            features["pub_book_count_log"] = np.log1p(1)
-            features["pub_std_rating"] = global_std
-
-        if author in auth_stats.index:
-            features["author_avg_rating"] = auth_stats.loc[author, "author_avg_rating"]
-            features["author_book_count_log"] = np.log1p(auth_stats.loc[author, "author_book_count"])
-        else:
-            features["author_avg_rating"] = global_mean
-            features["author_book_count_log"] = np.log1p(1)
-
-        features["binding_score"] = binding_stats.get(binding, global_mean)
-        features["pub_year"] = np.clip(pub_year, 1900, 2030)
-        features["pages_log"] = np.log1p(max(10, min(pages, 5000)))
-        features["is_translation"] = int(is_translation)
-        features["is_series"] = int(is_series)
-
-        X = np.array([[features[name] for name in self.feature_names]])
+        input_frame = pd.DataFrame(
+            [{
+                "author": author,
+                "publisher": publisher,
+                "pub_year": pub_year,
+                "pages": pages,
+                "binding": binding,
+                "is_translation": int(is_translation),
+                "is_series": int(is_series),
+            }]
+        )
+        X = build_coldstart_feature_frame(input_frame, self._stats_cache).values
 
         # Predict
         pred = float(self.model.predict(X)[0])
-        lower = float(self.model_lower.predict(X)[0])
-        upper = float(self.model_upper.predict(X)[0])
+        lower_raw = float(self.model_lower.predict(X)[0])
+        upper_raw = float(self.model_upper.predict(X)[0])
+        lower = min(lower_raw, upper_raw, pred)
+        upper = max(lower_raw, upper_raw, pred)
 
-        # Find similar books
-        sims = cosine_similarity(X, self.feature_matrix)[0]
-        top_indices = np.argsort(sims)[::-1][:5]
+        # Find similar books in a standardized feature space.
+        scaled_x = self.similarity_scaler.transform(X)
+        distances = euclidean_distances(scaled_x, self.similarity_matrix)[0]
+        top_indices = np.argsort(distances)[:5]
 
         _meta = getattr(self, "_book_meta", {})
         similar_books = []
@@ -371,7 +245,7 @@ class ColdStartPredictor:
                 "rating": info.get("rating"),
                 "author": info.get("author", ""),
                 "publisher": info.get("publisher", ""),
-                "similarity": float(sims[idx]),
+                "similarity": float(1.0 / (1.0 + distances[idx])),
             })
 
         return pred, lower, upper, X, similar_books
@@ -404,8 +278,6 @@ if __name__ == "__main__":
 
     csp = ColdStartPredictor()
     csp.load_data()
-    csp.build_stats()
-    csp.build_features()
     csp.train()
     csp.save()
 
@@ -415,9 +287,9 @@ if __name__ == "__main__":
         pub_year=2025, pages=350, binding="平装",
         is_translation=False, is_series=False,
     )
-    print(f"\n[Test] 余华 / 人民文学出版社 / 2025 / 350p")
+    print("\n[Test] 余华 / 人民文学出版社 / 2025 / 350p")
     print(f"  Predicted: {pred:.2f}  [{low:.2f} - {up:.2f}]")
-    print(f"  Similar books:")
+    print("  Similar books:")
     for sb in similar:
         r = sb.get('rating')
         rs = f"{r:.1f}" if r is not None else "?"

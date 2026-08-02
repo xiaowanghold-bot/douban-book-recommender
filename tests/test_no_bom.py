@@ -37,4 +37,4 @@ def test_no_control_characters_in_source_files():
                     # Calculate line number
                     line_no = raw[:i].count(b"\n") + 1
                     failed.append(f"{p.relative_to(ROOT)}:{line_no}: byte 0x{byte:02x}")
-    assert not failed, f"Files with control characters:\n" + "\n".join(failed)
+    assert not failed, "Files with control characters:\n" + "\n".join(failed)

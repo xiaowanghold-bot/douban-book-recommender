@@ -1,0 +1,31 @@
+{
+  "artifact_version": 4,
+  "model": "GradientBoostingRegressor",
+  "encoding": "5-fold OOF aggregate features",
+  "similarity": "standardized Euclidean distance",
+  "feature_names": [
+    "pub_avg_rating",
+    "pub_book_count_log",
+    "pub_std_rating",
+    "author_avg_rating",
+    "author_book_count_log",
+    "binding_score",
+    "pub_year",
+    "pages_log",
+    "is_translation",
+    "is_series"
+  ],
+  "metrics": {
+    "RMSE": 0.5039893641579952,
+    "MAE": 0.3852798500926682,
+    "R2": 0.493337334700349,
+    "CV_R2": 0.4222381264855161,
+    "CV_R2_std": 0.029300727711239496,
+    "author_baseline_RMSE": 0.5580495861440861,
+    "author_baseline_R2": 0.3788138827717643,
+    "n_samples": 6575,
+    "n_train": 5260,
+    "n_test": 1315,
+    "encoding": "5-fold OOF aggregate features"
+  }
+}

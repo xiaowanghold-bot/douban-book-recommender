@@ -11,12 +11,10 @@
 """
 import argparse
 import json
-import os
 import random
 import re
 import sys
 import time
-import tempfile
 import shutil
 from pathlib import Path
 
@@ -352,7 +350,7 @@ def main():
     save_progress(FAILED_FILE, failed_set)
     
     print(f"\n{'='*60}")
-    print(f"  本次统计")
+    print("  本次统计")
     print(f"  请求数: {total_requests} | 成功: {success_desc} | 重定向: {redirected}")
     print(f"  死链: {not_found} | 失败: {total_fails}")
     print(f"  标签命中: {success_tags}/{success_desc} ({100*success_tags//max(1,success_desc)}%)")
@@ -364,7 +362,7 @@ def main():
         print(f"\n--- 新简介样例 (共{len(success_samples)}条) ---")
         for s in success_samples:
             tag_str = ", ".join(s["tags"][:5]) if s["tags"] else "(无标签)"
-            redirect_note = f" [重定向]" if s["redirected"] else ""
+            redirect_note = " [重定向]" if s["redirected"] else ""
             print(f"  ID={s['id']} {s['title']}{redirect_note}")
             print(f"    简介: {s['intro']}...")
             print(f"    标签: {tag_str}")

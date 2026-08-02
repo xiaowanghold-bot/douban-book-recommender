@@ -11,7 +11,6 @@ IJCAI 豆瓣公开数据集整合
 - data/processed/tag_counts.csv:  标签频次表
 - data/processed/user_ratings.csv: user_id, douban_book_id, rating, time
 """
-import sys
 import pandas as pd
 import json
 from pathlib import Path
@@ -65,7 +64,7 @@ our_ids = set(str(int(i)) for i in our_df["id"])
 ijcai_ids = set(rev_valid["douban_id"].unique())
 overlap = our_ids & ijcai_ids
 
-print(f"\n--- 重合统计 ---")
+print("\n--- 重合统计 ---")
 print(f"  本项目图书数: {len(our_ids):,}")
 print(f"  IJCAI 图书数: {len(ijcai_ids):,}")
 print(f"  重合数:       {len(overlap):,}")
@@ -121,7 +120,7 @@ print(f"[user_ratings.csv] {len(user_ratings):,} 条记录, {user_ratings['user_
 # ============================================================
 user_counts = user_ratings.groupby("user_id").size()
 active_users = user_counts[user_counts >= 10]
-print(f"\n--- 用户活跃度 ---")
+print("\n--- 用户活跃度 ---")
 print(f"  总用户: {len(user_counts):,}")
 print(f"  >=10 条评分: {len(active_users):,}")
 print(f"  >=20 条评分: {(user_counts >= 20).sum():,}")

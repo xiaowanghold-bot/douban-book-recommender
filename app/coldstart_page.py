@@ -34,9 +34,6 @@ def show(csp):
         pub_year = st.slider("出版年份", 1900, 2030, 2025, key="cs_year")
         pages = st.slider("预计页数", 50, 2000, 300, step=10, key="cs_pages")
         binding = st.selectbox("装帧", ["平装", "精装", "其他"], key="cs_binding")
-        votes_est = st.slider("预计评价人数 (仅参考，v3模型不参与预测)", 10, 500000, 5000, step=100, key="cs_votes",
-                              help="预估的评分人数")
-
     is_translation = st.checkbox("📖 翻译作品（有译者或原版书名）", key="cs_trans")
     is_series = st.checkbox("📚 系列作品（属于丛书系列）", key="cs_series")
 
@@ -51,7 +48,6 @@ def show(csp):
                     author=author, publisher=publisher,
                     pub_year=pub_year, pages=pages, binding=binding,
                     is_translation=is_translation, is_series=is_series,
-                    votes_estimate=votes_est
                 )
 
             st.markdown("---")
@@ -82,7 +78,6 @@ def show(csp):
                     st.markdown("**📊 特征重要性**")
                     name_map = {
                         "author_avg_rating": "作者平均评分",
-                        "votes_log": "评价人数(log)",
                         "pages_log": "页数(log)",
                         "author_book_count_log": "作者作品数(log)",
                         "pub_avg_rating": "出版社平均评分",
@@ -101,7 +96,7 @@ def show(csp):
                     fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10))
                     st.plotly_chart(fig, use_container_width=True)
 
-                st.markdown("**📚 最相似的已有书籍**")
+                st.markdown("**📚 标准化特征最接近的已有书籍**")
                 sim_data = []
                 for sb in similar:
                     sim_data.append({
@@ -117,12 +112,13 @@ def show(csp):
     with st.expander("🧠 模型信息", expanded=False):
         m = csp.metrics
         st.markdown(f"""
-        **v3 GradientBoosting (10特征, LOO统计)**
+        **v4 GradientBoosting（10特征，5折 OOF 统计）**
         - 训练样本: **{m.get('n_samples', 0):,}** 本豆瓣图书
-        - LOO MAE: **{m.get('MAE', 0):.3f}** (留一法训练误差)
-        - LOO R²: **{m.get('R2', 0):.3f}** (留一法拟合优度)
-        - 5折交叉验证 R²: **{m.get('CV_R2', 0):.3f}**
-        - 独立测试集 R²: **0.50** (严谨版评估)
-        - 特征维度: 10 (去votes_log, LOO统计)
+        - 独立测试集 RMSE: **{m.get('RMSE', 0):.3f}**（作者均值基线 {m.get('author_baseline_RMSE', 0):.3f}）
+        - 独立测试集 MAE: **{m.get('MAE', 0):.3f}**
+        - 独立测试集 R²: **{m.get('R2', 0):.3f}**（作者均值基线 {m.get('author_baseline_R2', 0):.3f}）
+        - 嵌套5折 CV R²: **{m.get('CV_R2', 0):.3f} ± {m.get('CV_R2_std', 0):.3f}**
+        - 特征维度: 10（不使用 votes_log）
+        - 相似书检索: 标准化欧氏距离
         - 置信区间: 分位数回归 (5%-95%)
         """)

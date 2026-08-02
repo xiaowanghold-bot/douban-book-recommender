@@ -1,7 +1,8 @@
 """Unit tests for name normalization."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from normalize import normalize_publisher, normalize_author, PUBLISHER_NORM, AUTHOR_NORM
+from normalize import normalize_publisher, normalize_author
 
 
 class TestPublisherNorm:
