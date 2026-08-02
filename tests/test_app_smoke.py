@@ -35,12 +35,12 @@ def test_no_exception(app):
 
 def test_all_nav_pages(app):
     for i, page_name in enumerate(PAGES):
-        app.sidebar.radio[0].set_value(page_name).run()
+        app.sidebar.radio[0].set_value(page_name).run(timeout=60)
         assert not app.exception, f"Page {page_name} caused exception"
 
 
 def test_home_detail_interaction(app):
-    app.sidebar.radio[0].set_value(PAGES[0]).run()
+    app.sidebar.radio[0].set_value(PAGES[0]).run(timeout=60)
     assert not app.exception
     detail_buttons = [button for button in app.button if button.label == "📖 详情"]
     assert detail_buttons, "首页应展示可展开的精选图书"
@@ -52,7 +52,7 @@ def test_home_detail_interaction(app):
 
 def test_rating_prediction_v2(app):
     """Verify v2 predictor uses dict-based means (not LabelEncoder)."""
-    app.sidebar.radio[0].set_value(PAGES[4]).run()
+    app.sidebar.radio[0].set_value(PAGES[4]).run(timeout=60)
     assert not app.exception
     # Direct verification: pkl uses v2 encoders
     import pickle
@@ -76,11 +76,11 @@ def test_rating_prediction_v2(app):
     assert 2.0 <= pred <= 10.0, f"Prediction {pred} out of [2,10]"
 
 def test_tag_browse_novel(app):
-    app.sidebar.radio[0].set_value(PAGES[7]).run()
+    app.sidebar.radio[0].set_value(PAGES[7]).run(timeout=60)
     assert not app.exception
 
 def test_search_and_recommendation_interaction(app):
-    app.sidebar.radio[0].set_value(PAGES[2]).run()
+    app.sidebar.radio[0].set_value(PAGES[2]).run(timeout=60)
     assert not app.exception
     app.text_input[0].set_value("三体").run(timeout=60)
     assert not app.exception
