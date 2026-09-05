@@ -2,7 +2,7 @@
 
 > 基于 174,244 本豆瓣图书数据的可解释评价、推荐与评分预测研究原型 —— 江南大学大学生创新训练计划项目
 
-[![CI](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaowanghold-bot/douban-book-recommender/actions/workflows/ci.yml)
+[![CI](https://github.com/DarkMoonWarrior/douban-book-recommender/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkMoonWarrior/douban-book-recommender/actions/workflows/ci.yml)
 
 **在线 Demo**: [xiaowanghold-bot-douban-book-recommender](https://xiaowanghold-bot-douban-book-recommender-appmain-epob3s.streamlit.app)
 
@@ -39,7 +39,7 @@ graph LR
 
     D --> E[recommendation.py<br/>jieba TF-IDF + Cosine]
     D --> F[analysis.py<br/>出版社/作者统计]
-    D --> G[enhancements.py<br/>RandomForest 评分预测]
+    D --> G[rating_training.py + enhancements.py<br/>RandomForest 评分预测]
 
     F --> H[Streamlit App<br/>app/main.py]
     E --> H
@@ -64,7 +64,7 @@ graph LR
 
 ### 1. 推荐引擎：字符 n-gram vs 语义化 TF-IDF
 
-| 实验 | 指标 | 字符版 | 语义版 | 提升 |
+| 实验 | 指标 | 字符版 | 语义版 | 相对变化 |
 |------|------|--------|--------|------|
 | A: 同系列 Recall | Recall@10 | 0.1609 | **0.3627** | +125% |
 | A: 同系列 Recall | Recall@20 | 0.1764 | **0.4144** | +135% |
@@ -121,7 +121,7 @@ graph LR
 
 - **多版本去重**：`dedup_editions()` 规范化书名，仅移除“第X版/修订版/精装/套装”等明确版本标记后保留 votes 最高版本；“卷Ⅱ/卷Ⅲ、上/下册”等内容边界分别保留。当前展示数据缺少全量作者键，因此同名异书仍存在误合并风险，答辩中不将其表述为严格实体消歧。
 - **名称归一**：normalize_publisher()/normalize_author() 处理繁简体、合并条目拆分、后缀剥离、30 余个变体归一。例：「東立」+「東立出版社」+「東立出版社有限公司」-> 東立出版社 44本；「钱钟书」+「钱锺书」-> 钱锺书 16本。
-- **贝叶斯收缩**：排行榜、出版社榜、作者榜统一使用贝叶斯收缩（m=P75=8.0，C=8.16；归一化后共492家出版社，统计与榜单纳入其中图书数>=3的214家；作者归一化后2,842位，纳入>=2的886位）。例：北京体育大学出版社（n=1/均分9.90）原始第1位 → 收缩后第58位；中华书局（n=35/均分8.99）原始第62位 → 收缩后第1位。
+- **贝叶斯收缩**：图书榜使用 `C=8.0592、m=77`（高分图书评价人数中位数）；出版社榜在 214 个合格组上使用 `C≈8.2072、m=21`，作者榜在 886 个合格组上使用 `C≈8.1683、m=5`。这些参数是可解释的分布规则，不是独立验证集上调出的最优值；加权结果也不代表客观质量。
 
 ---
 
@@ -161,7 +161,7 @@ python scripts/check_runtime_assets.py
 | 数据集 | 规模 | 用途 | 来源 |
 |------|------|------|------|
 | Douban-books-2020 | 288,824 本 | 主数据集（评分/书名/作者） | [yuzhounh/Douban-books-2020](https://github.com/yuzhounh/Douban-books-2020) |
-| IJCAI (DTCDR/GA-DTCDR) | 95,872 本 / 227K 条评分 | 标签映射 + 真实用户评估 | Kaggle |
+| IJCAI (DTCDR/GA-DTCDR) | 95,872 本 / 约 22.7 万条评分 | 标签映射 + 真实用户评估 | 论文作者公开数据，仓库通过 Kaggle 镜像整理 |
 | Books_detail.csv | 6,584 本详情 | 价格/页数/ISBN/装帧 | 自建爬虫 |
 | book_descriptions.json | 1,840 条简介 | 语义搜索文档 | 自建爬虫 |
 | book_tags.json | 35,693 本标签 | 推荐特征 + 标签筛选 | IJCAI 聚合变换 |
@@ -171,8 +171,8 @@ python scripts/check_runtime_assets.py
 ### 引用 / Citation
 
 若使用 IJCAI 数据集部分，请引用：
-- Zhu et al., "DTCDR: A Framework for Dual-Target Cross-Domain Recommendation", CIKM 2019
-- Zhu et al., "GA-DTCDR: Graph Embeddings for Cross-Domain Recommendation", IJCAI 2020
+- Zhu et al., “DTCDR: A Framework for Dual-Target Cross-Domain Recommendation”, CIKM 2019, DOI: `10.1145/3357384.3357992`
+- Zhu et al., “A Graphical and Attentional Framework for Dual-Target Cross-Domain Recommendation”, IJCAI 2020, DOI: `10.24963/ijcai.2020/415`
 
 **研究用途说明**：本项目仅将公开数据与聚合产物用于学术研究和教学演示，不作商业用途，不展示用户身份信息。原始数据集部分文件（user_ratings.csv）未入库，仅保留聚合变换产物（book_tags.json、tag_counts.csv）。爬取形成的详情与简介是离线研究快照，不代表豆瓣当前页面状态。
 
@@ -188,7 +188,7 @@ data/models/ 目录下为预计算产物，因 Streamlit Cloud 部署需要而�
 | nn_neighbors.pkl | ~10 MB | src/recommendation.py |
 | vectorizer.pkl | ~1.5 MB | src/recommendation.py |
 | books_for_rec.csv | ~16 MB | src/recommendation.py |
-| rating_predictor.pkl | ~5.7 MB | src/enhancements.py |
+| rating_predictor.pkl | ~5.7 MB | src/rating_training.py + src/enhancements.py |
 | coldstart_meta.pkl + coldstart_model*.joblib | ~3.1 MB | src/coldstart_predictor.py |
 
 > nn_neighbors.npz（~80 MB，仅离线评估使用）不入库，运行 python -m src.recommendation 生成。若更改特征工程或训练数据，需重新运行对应脚本生成新产物。

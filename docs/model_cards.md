@@ -24,7 +24,7 @@
 - 作用：把小样本评分向全局均值收缩，降低“少量高分”占据榜首的概率。
 - 限制：仍继承豆瓣用户群体和热度偏差；不能把加权分解释为图书的客观质量。
 
-出版社与作者排行榜使用同结构的组均值收缩，但 `n` 是组内图书数，`m` 按组规模分布确定。
+出版社与作者排行榜使用同结构的组均值收缩，但 `n` 是组内图书数，`m` 按合格组规模的第 75 百分位确定。当前出版社榜为 `C≈8.2072、m=21`，作者榜为 `C≈8.1683、m=5`。
 
 ## 3. 内容推荐与语义搜索
 
@@ -99,3 +99,8 @@
 3. 在一个系统中同时展示模型输出、证据边界和可解释因素，形成适合本科创新训练的完整研究闭环。
 
 不要使用“提出全新推荐算法”“达到业界领先”“可以直接指导出版决策”“置信区间保证准确”等表述。
+
+## 8. 数据来源引用
+
+- Feng Zhu, Chaochao Chen, Yan Wang, Guanfeng Liu, Xiaolin Zheng. *DTCDR: A Framework for Dual-Target Cross-Domain Recommendation*. CIKM 2019: 1533–1542. DOI: `10.1145/3357384.3357992`。
+- Feng Zhu, Yan Wang, Chaochao Chen, Guanfeng Liu, Xiaolin Zheng. *A Graphical and Attentional Framework for Dual-Target Cross-Domain Recommendation*. IJCAI 2020: 3001–3008. DOI: `10.24963/ijcai.2020/415`。

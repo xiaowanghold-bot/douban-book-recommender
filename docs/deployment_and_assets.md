@@ -8,11 +8,13 @@ Streamlit 应用采用“克隆仓库即可运行”的部署方式，因此线�
 - 任一文件均未达到 GitHub 的 100MB 单文件限制；
 - 模型产物总大小可被持续观察。
 
-`data/models/nn_neighbors.npz` 约 80MB，只供离线评估使用，不是应用运行依赖，已在 `.gitignore` 中排除。线上推荐使用 `nn_neighbors.pkl`。
+`data/models/nn_neighbors.npz` 约 84MB，只供离线评估使用，不是应用运行依赖，已在 `.gitignore` 中排除。线上推荐使用 `nn_neighbors.pkl`。
 
 ## 封面现状
 
 当前 `app/covers/` 有 5,362 个文件，约 113MB；`verified_covers.json` 标记其中 447 张为已核验封面，约 30MB。页面只直接展示已核验封面，其他文件仍保留为爬取和后续人工核验素材。
+
+当前 9 个线上必需模型产物合计约 43.45MB；本地检查以脚本输出为准，不在文档中维护容易过期的逐文件精确大小。
 
 不在普通功能分支中批量删除封面，原因是：
 
